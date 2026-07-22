@@ -46,6 +46,27 @@ def cargar_datos():
     return pd.DataFrame(columns=COLUMNAS_OFICIALES)
 
 
+def generar_siguiente_num_orden():
+  df = cargar_datos()
+  if df.empty or "NumOrden" not in df.columns:
+    return "000001"
+
+  # Filtrar valores que tengan formato numérico o de OT para extraer el mayor
+  numeros = []
+  for val in df["NumOrden"].dropna():
+    val_str = str(val).strip()
+    # Intentar extraer solo los dígitos por si acaso hay texto previo
+    digitos = "".join(filter(str.isdigit, val_str))
+    if digitos.isdigit():
+      numeros.append(int(digitos))
+
+  if not numeros:
+    return "000001"
+
+  siguiente_num = max(numeros) + 1
+  return f"{siguiente_num:06d}"
+
+
 def guardar_registro(nuevo_dato):
   df = cargar_datos()
   df = pd.concat([df, pd.DataFrame([nuevo_dato])], ignore_index=True)
@@ -160,7 +181,6 @@ st.set_page_config(
 if "admin_logueado" not in st.session_state:
   st.session_state["admin_logueado"] = False
 
-# Inicializar horas predeterminadas en session_state para que no se recalculen erróneamente en cada interacción
 if "hora_inicial_default" not in st.session_state:
   st.session_state["hora_inicial_default"] = datetime.now().strftime("%H:%M")
 
@@ -215,6 +235,10 @@ if menu == "Registrar Orden (Técnicos)":
   # Hora de referencia estable para el formulario actual
   h_ref = st.session_state["hora_inicial_default"]
 
+  # Obtener el número de orden que se asignará automáticamente a esta nueva orden
+  siguiente_ot = generar_siguiente_num_orden()
+  st.info(f"📌 Se asignará automáticamente el número de orden: **{siguiente_ot}**")
+
   with st.form("form_orden"):
     col1, col2 = st.columns(2)
 
@@ -224,7 +248,6 @@ if menu == "Registrar Orden (Técnicos)":
       equipo = st.text_input(
           "Equipo intervenido", placeholder="Ej. Banda Transportadora 3"
       )
-      num_orden = st.text_input("Número de Orden (OT)", placeholder="Ej. OT-8492")
       tipo_mtto = st.selectbox(
           "Clasificación de la OT",
           ["Correctivo", "Ajuste", "Configuración de línea"],
@@ -283,6 +306,9 @@ if menu == "Registrar Orden (Técnicos)":
     mensaje_form_container = st.empty()
 
     if submitted:
+      # Volver a calcular el siguiente número justo al enviar por seguridad en caso de concurrencia
+      num_orden_asignado = generar_siguiente_num_orden()
+
       if tecnico == "Selecciona un técnico...":
         mensaje_form_container.error(
             "Por favor selecciona tu nombre de la lista."
@@ -291,10 +317,10 @@ if menu == "Registrar Orden (Técnicos)":
         mensaje_form_container.error(
             "Por favor selecciona el área correspondiente."
         )
-      elif not equipo or not num_orden or not descripcion:
+      elif not equipo or not descripcion:
         mensaje_form_container.warning(
-            "Por favor completa todos los campos obligatorios (Equipo, Núm. de"
-            " Orden y Descripción)."
+            "Por favor completa todos los campos obligatorios (Equipo y"
+            " Descripción)."
         )
       elif not pass_tecnico:
         mensaje_form_container.error(
@@ -355,7 +381,7 @@ if menu == "Registrar Orden (Técnicos)":
                   "Tecnico": tecnico,
                   "Area": area,
                   "Equipo": equipo,
-                  "NumOrden": num_orden,
+                  "NumOrden": num_orden_asignado,
                   "TipoMantenimiento": tipo_mtto,
                   "HoraEmision": emi_str,
                   "HoraRecepcion": rec_str,
@@ -376,7 +402,7 @@ if menu == "Registrar Orden (Técnicos)":
 
               # Mostrar el mensaje de éxito justo debajo del botón
               mensaje_form_container.success(
-                  f"✅ ¡Orden {num_orden} guardada exitosamente! "
+                  f"✅ ¡Orden {num_orden_asignado} guardada exitosamente! "
                   f"(T. Espera: {min_espera} min | T. Trabajo: {min_trabajo} min"
                   f" | Total: {min_total} min)"
               )
