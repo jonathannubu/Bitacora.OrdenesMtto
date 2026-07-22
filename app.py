@@ -160,9 +160,6 @@ st.set_page_config(
 if "admin_logueado" not in st.session_state:
   st.session_state["admin_logueado"] = False
 
-if "mensaje_exito_ot" not in st.session_state:
-  st.session_state["mensaje_exito_ot"] = None
-
 # Inicializar horas predeterminadas en session_state para que no se recalculen erróneamente en cada interacción
 if "hora_inicial_default" not in st.session_state:
   st.session_state["hora_inicial_default"] = datetime.now().strftime("%H:%M")
@@ -208,10 +205,6 @@ st.sidebar.markdown("---")
 if menu == "Registrar Orden (Técnicos)":
   st.subheader("📝 Registro de Orden de Trabajo")
   st.markdown("Completa los datos de la intervención realizada.")
-
-  if st.session_state["mensaje_exito_ot"]:
-    st.success(st.session_state["mensaje_exito_ot"])
-    st.session_state["mensaje_exito_ot"] = None
 
   df_tec_system = cargar_tecnicos_df()
   lista_tecnicos_activos = ["Selecciona un técnico..."] + list(
@@ -286,18 +279,27 @@ if menu == "Registrar Orden (Técnicos)":
           "Guardar Orden", use_container_width=True
       )
 
+    # Contenedor exclusivo para mensajes dentro del formulario y debajo del botón
+    mensaje_form_container = st.empty()
+
     if submitted:
       if tecnico == "Selecciona un técnico...":
-        st.error("Por favor selecciona tu nombre de la lista.")
+        mensaje_form_container.error(
+            "Por favor selecciona tu nombre de la lista."
+        )
       elif area == "Selecciona un área...":
-        st.error("Por favor selecciona el área correspondiente.")
+        mensaje_form_container.error(
+            "Por favor selecciona el área correspondiente."
+        )
       elif not equipo or not num_orden or not descripcion:
-        st.warning(
+        mensaje_form_container.warning(
             "Por favor completa todos los campos obligatorios (Equipo, Núm. de"
             " Orden y Descripción)."
         )
       elif not pass_tecnico:
-        st.error("Por favor ingresa tu contraseña de técnico.")
+        mensaje_form_container.error(
+            "Por favor ingresa tu contraseña de técnico."
+        )
       else:
 
         def limpiar_hora(texto_hora):
@@ -314,7 +316,7 @@ if menu == "Registrar Orden (Técnicos)":
         con_str, _ = limpiar_hora(h_conformidad)
 
         if not emi_str or not rec_str or not cie_str or not con_str:
-          st.error(
+          mensaje_form_container.error(
               "Formato de hora incorrecto. Usa el formato de 24 horas (Ej. 08:30"
               " o 14:15)."
           )
@@ -372,18 +374,21 @@ if menu == "Registrar Orden (Técnicos)":
                   "%H:%M"
               )
 
-              st.session_state["mensaje_exito_ot"] = (
+              # Mostrar el mensaje de éxito justo debajo del botón
+              mensaje_form_container.success(
                   f"✅ ¡Orden {num_orden} guardada exitosamente! "
-                  f"(T. Espera: {min_espera} min | T. Trabajo: {min_trabajo} min | Total: {min_total} min)"
+                  f"(T. Espera: {min_espera} min | T. Trabajo: {min_trabajo} min"
+                  f" | Total: {min_total} min)"
               )
-              st.rerun()
             else:
-              st.error(
-                  "Contraseña incorrecta para el técnico seleccionado. Verifica"
-                  " tu clave."
+              mensaje_form_container.error(
+                  "Contraseña incorrecta para el técnico seleccionado."
+                  " Verifica tu clave."
               )
           else:
-            st.error("Error al identificar al técnico seleccionado.")
+            mensaje_form_container.error(
+                "Error al identificar al técnico seleccionado."
+            )
 
 
 # ---------------------------------------------------------
