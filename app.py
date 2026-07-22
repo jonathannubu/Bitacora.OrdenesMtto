@@ -8,7 +8,6 @@ DATA_FILE = "bitacora_mantenimiento.csv"
 TECNICOS_FILE = "tecnicos_activos.csv"
 AREAS_FILE = "areas_activas.csv"
 
-# Columnas oficiales que debe tener la bitácora
 COLUMNAS_OFICIALES = [
     "Fecha",
     "Turno",
@@ -29,19 +28,13 @@ def cargar_datos():
   if os.path.exists(DATA_FILE):
     try:
       df = pd.read_csv(DATA_FILE)
-      # Si por alguna razón el archivo viejo tiene 'Linea' en vez de 'Area', lo renombramos
       if "Linea" in df.columns and "Area" not in df.columns:
         df = df.rename(columns={"Linea": "Area"})
-
-      # Verificamos que existan todas las columnas oficiales; si falta alguna, la agregamos vacía
       for col in COLUMNAS_OFICIALES:
         if col not in df.columns:
           df[col] = ""
-
-      # Nos quedamos estrictamente con el orden oficial
       return df[COLUMNAS_OFICIALES]
     except Exception:
-      # Si el archivo está corrupto o da error, devolvemos un DataFrame limpio
       return pd.DataFrame(columns=COLUMNAS_OFICIALES)
   else:
     return pd.DataFrame(columns=COLUMNAS_OFICIALES)
@@ -144,46 +137,6 @@ def eliminar_area(area_a_borrar):
   return False, "El área seleccionada no existe."
 
 
-# --- VENTANA EMERGENTE (MODAL) PARA CONTRASEÑA DE TÉCNICO ---
-@st.dialog("🔒 Validación de Identidad del Técnico")
-def modal_password_tecnico(datos_orden):
-  st.write(f"Técnico seleccionado: **{datos_orden['Tecnico']}**")
-  st.write(
-      "Ingresa tu contraseña personal para confirmar y guardar la orden de"
-      " trabajo:"
-  )
-
-  pass_ingresada = st.text_input(
-      "Contraseña de técnico", type="password", key="modal_pass_input"
-  )
-
-  col1, col2 = st.columns(2)
-  with col1:
-    if st.button("Confirmar y Guardar", use_container_width=True):
-      df_tec_system = cargar_tecnicos_df()
-      match = df_tec_system[
-          df_tec_system["Tecnico"] == str(datos_orden["Tecnico"]).strip()
-      ]
-
-      if not match.empty:
-        pass_correcta = str(match["Password"].values[0]).strip()
-        pass_ingresada_clean = str(pass_ingresada).strip().replace(".0", "")
-
-        if pass_ingresada_clean == pass_correcta:
-          guardar_registro(datos_orden)
-          st.success("¡Orden registrada y validada con éxito!")
-          del st.session_state["temp_orden"]
-          st.rerun()
-        else:
-          st.error("Contraseña incorrecta.")
-      else:
-        st.error("Error en el técnico seleccionado.")
-
-  with col2:
-    if st.button("Cancelar", use_container_width=True):
-      st.rerun()
-
-
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(
     page_title="Bitácora de Mantenimiento", page_icon="⚙️", layout="wide"
@@ -278,7 +231,28 @@ if menu == "Registrar Orden (Técnicos)":
         ),
     )
 
-    submitted = st.form_submit_button("Guardar Orden")
+    st.markdown("---")
+    # Sección de validación integrada justo antes del botón de guardar
+    st.markdown(
+        "🔐 **Validación de Identidad:** Ingresa tu contraseña personal para"
+        " autorizar el registro."
+    )
+    f_col1, f_col2 = st.columns([2, 1])
+
+    with f_col1:
+      pass_tecnico = st.text_input(
+          "Contraseña de Técnico",
+          type="password",
+          placeholder="Tu clave personal",
+          key="pass_tecnico_form",
+      )
+
+    with f_col2:
+      st.write("")  # Espaciador visual vertical
+      st.write("")
+      submitted = st.form_submit_button(
+          "Guardar Orden", use_container_width=True
+      )
 
     if submitted:
       if tecnico == "Selecciona un técnico...":
@@ -290,38 +264,58 @@ if menu == "Registrar Orden (Técnicos)":
             "Por favor completa todos los campos obligatorios (Equipo, Núm. de"
             " Orden y Descripción)."
         )
-      else:
-        dt_recepcion = datetime.combine(datetime.today(), hora_recepcion)
-        dt_cierre = datetime.combine(datetime.today(), hora_cierre)
-
-        if dt_cierre < dt_recepcion:
-          from datetime import timedelta
-
-          dt_cierre += timedelta(days=1)
-
-        diferencia_minutos = int(
-            (dt_cierre - dt_recepcion).total_seconds() / 60
+      elif not pass_tecnico:
+        st.error(
+            "Por favor ingresa tu contraseña de técnico para guardar el"
+            " registro."
         )
-        if diferencia_minutos < 0:
-          diferencia_minutos = 0
+      else:
+        # Validar contraseña del técnico seleccionado
+        match = df_tec_system[df_tec_system["Tecnico"] == tecnico.strip()]
+        if not match.empty:
+          pass_correcta = str(match["Password"].values[0]).strip()
+          pass_ingresada_clean = str(pass_tecnico).strip().replace(".0", "")
 
-        st.session_state["temp_orden"] = {
-            "Fecha": fecha_actual,
-            "Turno": turno,
-            "Tecnico": tecnico,
-            "Area": area,
-            "Equipo": equipo,
-            "NumOrden": num_orden,
-            "TipoMantenimiento": tipo_mtto,
-            "HoraRecepcion": hora_recepcion.strftime("%H:%M"),
-            "HoraCierre": hora_cierre.strftime("%H:%M"),
-            "Minutos": diferencia_minutos,
-            "Descripcion": descripcion,
-        }
-        st.rerun()
+          if pass_ingresada_clean == pass_correcta:
+            # Cálculo automático de minutos
+            dt_recepcion = datetime.combine(datetime.today(), hora_recepcion)
+            dt_cierre = datetime.combine(datetime.today(), hora_cierre)
 
-  if "temp_orden" in st.session_state:
-    modal_password_tecnico(st.session_state["temp_orden"])
+            if dt_cierre < dt_recepcion:
+              from datetime import timedelta
+
+              dt_cierre += timedelta(days=1)
+
+            diferencia_minutos = int(
+                (dt_cierre - dt_recepcion).total_seconds() / 60
+            )
+            if diferencia_minutos < 0:
+              diferencia_minutos = 0
+
+            nuevo_registro = {
+                "Fecha": fecha_actual,
+                "Turno": turno,
+                "Tecnico": tecnico,
+                "Area": area,
+                "Equipo": equipo,
+                "NumOrden": num_orden,
+                "TipoMantenimiento": tipo_mtto,
+                "HoraRecepcion": hora_recepcion.strftime("%H:%M"),
+                "HoraCierre": hora_cierre.strftime("%H:%M"),
+                "Minutos": diferencia_minutos,
+                "Descripcion": descripcion,
+            }
+
+            guardar_registro(nuevo_registro)
+            st.success("¡Orden registrada y validada con éxito!")
+            st.rerun()
+          else:
+            st.error(
+                "Contraseña incorrecta para el técnico seleccionado. Verifica"
+                " tu clave."
+            )
+        else:
+          st.error("Error al identificar al técnico seleccionado.")
 
 
 # ---------------------------------------------------------
@@ -360,7 +354,6 @@ elif menu == "📊 Resumen de Turno" and st.session_state["admin_logueado"]:
       st.warning("No hay registros para los filtros seleccionados.")
     else:
       total_ordenes = len(df_filtrado)
-      # Aseguramos que la columna Minutos sea numérica para evitar errores de cálculo
       df_filtrado["Minutos"] = pd.to_numeric(
           df_filtrado["Minutos"], errors="coerce"
       ).fillna(0)
