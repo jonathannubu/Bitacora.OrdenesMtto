@@ -227,7 +227,7 @@ if "hora_default" not in st.session_state:
 
 st.title("⚙️ Sistema de Órdenes de Trabajo (Fase Beta) - Avangard Labs")
 
-# --- MENÚ LATERAL: 3 CATEGORÍAS DE USUARIOS ---
+# --- MENÚ LATERAL: 4 CATEGORÍAS DE USUARIOS ---
 st.sidebar.image("https://img.icons8.com/color/96/maintenance.png", width=80)
 st.sidebar.title("Selección de Rol [BETA]")
 
@@ -237,6 +237,7 @@ categoria_usuario = st.sidebar.selectbox(
         "📝 Solicitante (Producción)",
         "👷‍♂️ Técnico de Mantenimiento",
         "📊 Visualizador / Gerencia",
+        "🛠️ Administrador (Gestión Total)",
     ],
 )
 st.sidebar.markdown("---")
@@ -511,77 +512,89 @@ elif categoria_usuario == "📊 Visualizador / Gerencia":
       st.markdown("### 📋 Detalle de Órdenes")
       st.dataframe(df_f, use_container_width=True)
 
-      # Sección de administración interna para gerencia
+# ---------------------------------------------------------
+# CATEGORÍA 4: ADMINISTRADOR (GESTIÓN TOTAL)
+# ---------------------------------------------------------
+elif categoria_usuario == "🛠️ Administrador (Gestión Total)":
+  st.subheader("🛠️ Panel de Administración del Sistema")
+  st.markdown(
+      "Gestiona los técnicos autorizados, las áreas/naves y la base de"
+      " datos."
+  )
+
+  pass_gerencia = st.text_input(
+      "Contraseña de Administrador", type="password", key="pass_admin_total"
+  )
+
+  if pass_gerencia.strip() == "avangardmtto22":
+    st.success("Acceso concedido.")
+    tab_g1, tab_g2 = st.tabs(["👥 Gestión de Técnicos", "🏭 Gestión de Áreas"])
+
+    with tab_g1:
+      st.markdown("#### Técnicos Registrados")
+      df_t = cargar_tecnicos_df()
+      st.dataframe(df_t, use_container_width=True)
+
+      st.markdown("#### Agregar o Actualizar Técnico")
+      n_tec = st.text_input("Nombre del técnico")
+      p_tec = st.text_input(
+          "Contraseña del técnico", type="password", key="p_tec_nuevo"
+      )
+      if st.button("Guardar / Actualizar Técnico"):
+        ex, msg = agregar_o_actualizar_tecnico(n_tec, p_tec)
+        if ex:
+          st.success(msg)
+          st.rerun()
+        else:
+          st.error(msg)
+
       st.markdown("---")
-      with st.expander("⚙️ Configuración del Sistema (Personal y Áreas)"):
-        pass_gerencia = st.text_input(
-            "Contraseña de Administrador", type="password", key="pass_ger"
-        )
-        if pass_gerencia.strip() == "avangardmtto22":
-          tab_g1, tab_g2 = st.tabs(["Técnicos", "Áreas"])
+      st.markdown("#### Eliminar Técnico")
+      tec_a_borrar = st.selectbox(
+          "Selecciona técnico a eliminar",
+          ["Selecciona..."] + list(df_t["Tecnico"]),
+      )
+      if st.button("Eliminar Técnico"):
+        if tec_a_borrar != "Selecciona...":
+          ex, msg = eliminar_tecnico(tec_a_borrar)
+          if ex:
+            st.success(msg)
+            st.rerun()
+          else:
+            st.error(msg)
+        else:
+          st.warning("Selecciona un técnico válido.")
 
-          with tab_g1:
-            st.markdown("#### Gestión de Técnicos")
-            df_t = cargar_tecnicos_df()
-            st.dataframe(df_t, use_container_width=True)
+    with tab_g2:
+      st.markdown("#### Áreas / Naves Actuales")
+      lista_areas_actuales = cargar_areas()
+      st.write(lista_areas_actuales)
 
-            n_tec = st.text_input("Nombre del técnico")
-            p_tec = st.text_input(
-                "Contraseña del técnico", type="password", key="p_tec_nuevo"
-            )
-            if st.button("Guardar / Actualizar Técnico"):
-              ex, msg = agregar_o_actualizar_tecnico(n_tec, p_tec)
-              if ex:
-                st.success(msg)
-                st.rerun()
-              else:
-                st.error(msg)
+      st.markdown("#### Agregar Nueva Área")
+      n_area = st.text_input("Nueva Área o Nave")
+      if st.button("Guardar Nueva Área"):
+        ex, msg = agregar_area(n_area)
+        if ex:
+          st.success(msg)
+          st.rerun()
+        else:
+          st.error(msg)
 
-            st.markdown("---")
-            tec_a_borrar = st.selectbox(
-                "Selecciona técnico a eliminar",
-                ["Selecciona..."] + list(df_t["Tecnico"]),
-            )
-            if st.button("Eliminar Técnico"):
-              if tec_a_borrar != "Selecciona...":
-                ex, msg = eliminar_tecnico(tec_a_borrar)
-                if ex:
-                  st.success(msg)
-                  st.rerun()
-                else:
-                  st.error(msg)
-              else:
-                st.warning("Selecciona un técnico válido.")
+      st.markdown("---")
+      st.markdown("#### Eliminar Área")
+      area_a_borrar = st.selectbox(
+          "Selecciona área a eliminar", ["Selecciona..."] + lista_areas_actuales
+      )
+      if st.button("Eliminar Área"):
+        if area_a_borrar != "Selecciona...":
+          ex, msg = eliminar_area(area_a_borrar)
+          if ex:
+            st.success(msg)
+            st.rerun()
+          else:
+            st.error(msg)
+        else:
+          st.warning("Selecciona un área válida.")
 
-          with tab_g2:
-            st.markdown("#### Gestión de Áreas / Naves")
-            lista_areas_actuales = cargar_areas()
-            st.write(lista_areas_actuales)
-
-            n_area = st.text_input("Nueva Área o Nave")
-            if st.button("Guardar Nueva Área"):
-              ex, msg = agregar_area(n_area)
-              if ex:
-                st.success(msg)
-                st.rerun()
-              else:
-                st.error(msg)
-
-            st.markdown("---")
-            area_a_borrar = st.selectbox(
-                "Selecciona área a eliminar",
-                ["Selecciona..."] + lista_areas_actuales,
-            )
-            if st.button("Eliminar Área"):
-              if area_a_borrar != "Selecciona...":
-                ex, msg = eliminar_area(area_a_borrar)
-                if ex:
-                  st.success(msg)
-                  st.rerun()
-                else:
-                  st.error(msg)
-              else:
-                st.warning("Selecciona un área válida.")
-
-        elif pass_gerencia:
-          st.error("Contraseña incorrecta.")
+  elif pass_gerencia:
+    st.error("Contraseña incorrecta.")
