@@ -3,7 +3,7 @@ import os
 import pandas as pd
 import streamlit as st
 
-# Archivos de datos locales/en la nube
+# Archivos de datos
 DATA_FILE = "bitacora_mantenimiento.csv"
 TECNICOS_FILE = "tecnicos_activos.csv"
 
@@ -18,9 +18,14 @@ def cargar_datos():
             "Fecha",
             "Turno",
             "Tecnico",
+            "Linea",
             "Equipo",
-            "Descripcion",
+            "NumOrden",
+            "TipoMantenimiento",
+            "HoraRecepcion",
+            "HoraCierre",
             "Minutos",
+            "Descripcion",
         ]
     )
 
@@ -33,18 +38,12 @@ def guardar_registro(nuevo_dato):
 
 def cargar_tecnicos_df():
   if os.path.exists(TECNICOS_FILE):
-    # Forzar que dtype=str lea todo estrictamente como texto desde el inicio
     df_tec = pd.read_csv(TECNICOS_FILE, dtype=str)
     df_tec["Tecnico"] = df_tec["Tecnico"].fillna("").astype(str).str.strip()
     df_tec["Password"] = df_tec["Password"].fillna("").astype(str).str.strip()
-
-    # Limpieza preventiva por si quedó algún .0 viejo guardado en el archivo
-    df_tec["Password"] = df_tec["Password"].str.replace(
-        r"\.0$", "", regex=True
-    )
+    df_tec["Password"] = df_tec["Password"].str.replace(r"\.0$", "", regex=True)
     return df_tec
   else:
-    # Técnicos iniciales por defecto con sus contraseñas
     df_tec = pd.DataFrame({
         "Tecnico": [
             "Técnico 1",
@@ -60,20 +59,15 @@ def cargar_tecnicos_df():
 def agregar_o_actualizar_tecnico(nombre, password):
   df_tec = cargar_tecnicos_df()
   nombre = str(nombre).strip()
-  password = str(password).strip()
-
-  # Limpiar por si el usuario teclea accidentalmente un .0
-  password = password.replace(".0", "")
+  password = str(password).strip().replace(".0", "")
 
   if not nombre or not password:
-    return False, "El nombre y la contraseña não pueden estar vacíos."
+    return False, "El nombre y la contraseña no pueden estar vacíos."
 
   if nombre in df_tec["Tecnico"].values:
-    # Actualizar contraseña si ya existe
     df_tec.loc[df_tec["Tecnico"] == nombre, "Password"] = password
     mensaje = f"Contraseña actualizada para {nombre}."
   else:
-    # Agregar nuevo
     nuevo_row = pd.DataFrame({"Tecnico": [nombre], "Password": [password]})
     df_tec = pd.concat([df_tec, nuevo_row], ignore_index=True)
     mensaje = f"Técnico {nombre} agregado exitosamente."
@@ -91,6 +85,49 @@ def eliminar_tecnico(nombre_a_borrar):
   return True, "Técnico eliminado correctamente."
 
 
+# --- VENTANA EMERGENTE (MODAL) PARA CONTRASEÑA DE TÉCNICO ---
+@st.dialog("🔒 Validación de Identidad del Técnico")
+def modal_password_tecnico(datos_orden):
+  st.write(
+      f"Técnico seleccionado: **{datos_orden['Tecnico']}**"
+  )
+  st.write(
+      "Ingresa tu contraseña personal para confirmar y guardar la orden de"
+      " trabajo:"
+  )
+
+  pass_ingresada = st.text_input(
+      "Contraseña de técnico", type="password", key="modal_pass_input"
+  )
+
+  col1, col2 = st.columns(2)
+  with col1:
+    if st.button("Confirmar y Guardar", use_container_width=True):
+      df_tec_system = cargar_tecnicos_df()
+      match = df_tec_system[
+          df_tec_system["Tecnico"] == str(datos_orden["Tecnico"]).strip()
+      ]
+
+      if not match.empty:
+        pass_correcta = str(match["Password"].values[0]).strip()
+        pass_ingresada_clean = str(pass_ingresada).strip().replace(".0", "")
+
+        if pass_ingresada_clean == pass_correcta:
+          guardar_registro(datos_orden)
+          st.success("¡Orden registrada y validada con éxito!")
+          # Limpiamos los datos temporales del formulario
+          del st.session_state["temp_orden"]
+          st.rerun()
+        else:
+          st.error("Contraseña incorrecta.")
+      else:
+        st.error("Error en el técnico seleccionado.")
+
+  with col2:
+    if st.button("Cancelar", use_container_width=True):
+      st.rerun()
+
+
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(
     page_title="Bitácora de Mantenimiento", page_icon="⚙️", layout="wide"
@@ -98,7 +135,6 @@ st.set_page_config(
 
 st.title("⚙️ Bitácora Digital de Órdenes de Trabajo")
 
-# Control de sesión para el Administrador
 if "admin_logueado" not in st.session_state:
   st.session_state["admin_logueado"] = False
 
@@ -107,16 +143,13 @@ st.sidebar.image("https://img.icons8.com/color/96/maintenance.png", width=80)
 st.sidebar.title("Navegación")
 
 opciones_menu = ["Registrar Orden (Técnicos)"]
-
 if st.session_state["admin_logueado"]:
   opciones_menu.append("📊 Resumen de Turno")
   opciones_menu.append("👥 Gestionar Técnicos")
 
 menu = st.sidebar.selectbox("Selecciona una sección", opciones_menu)
-
 st.sidebar.markdown("---")
 
-# --- CONTROL DE ACCESO DE ADMINISTRADOR ---
 if not st.session_state["admin_logueado"]:
   with st.sidebar.expander("🔐 Acceso Administrador"):
     pass_ingresada = st.text_input("Contraseña", type="password")
@@ -140,46 +173,54 @@ st.sidebar.markdown("---")
 # VISTA 1: REGISTRO DE ÓRDENES
 # ---------------------------------------------------------
 if menu == "Registrar Orden (Técnicos)":
-  st.subheader("📝 Registro de Orden Atendida")
-  st.markdown(
-      "Selecciona tu nombre, ingresa tu contraseña asignada, detalla el"
-      " servicio y guarda."
-  )
+  st.subheader("📝 Registro de Orden de Trabajo")
+  st.markdown("Completa los datos de la intervención realizada.")
 
   df_tec_system = cargar_tecnicos_df()
   lista_tecnicos_activos = ["Selecciona un técnico..."] + list(
       df_tec_system["Tecnico"]
   )
 
-  with st.form("form_orden", clear_on_submit=True):
+  with st.form("form_orden"):
     col1, col2 = st.columns(2)
 
     with col1:
       tecnico = st.selectbox("Técnico responsable", lista_tecnicos_activos)
-      password_tecnico = st.text_input(
-          "Contraseña de técnico",
-          type="password",
-          placeholder="Tu clave personal",
+      linea = st.text_input(
+          "Línea o Área", placeholder="Ej. Nave 2 / Línea de Empaque"
+      )
+      equipo = st.text_input(
+          "Equipo intervenido", placeholder="Ej. Banda Transportadora 3"
+      )
+      num_orden = st.text_input("Número de Orden (OT)", placeholder="Ej. OT-8492")
+
+    with col2:
+      tipo_mtto = st.selectbox(
+          "Clasificación de la OT",
+          ["Correctivo", "Ajuste", "Configuración de línea"],
       )
       turno = st.selectbox(
           "Turno", ["Matutino", "Vespertino", "Nocturno", "Mixto"]
       )
 
-    with col2:
-      equipo = st.text_input(
-          "Equipo / Máquina / Línea", placeholder="Ej. Línea de Envasado 2"
-      )
-      minutos = st.number_input(
-          "Tiempo invertido (minutos)", min_value=1, max_value=720, value=30
-      )
+      # Horas de recepción y cierre
+      h_col1, h_col2 = st.columns(2)
+      with h_col1:
+        hora_recepcion = st.time_input(
+            "Hora Recepción OT", value=datetime.now().time()
+        )
+      with h_col2:
+        hora_cierre = st.time_input(
+            "Hora Cierre OT", value=datetime.now().time()
+        )
+
       fecha_actual = datetime.now().strftime("%Y-%m-%d")
-      st.info(f"📅 Fecha de registro: {fecha_actual}")
 
     descripcion = st.text_area(
         "Descripción del trabajo realizado",
         placeholder=(
-            "Ej. Ajuste de sensor óptico, revisión de variador y cambio de"
-            " banda..."
+            "Ej. Reemplazo de sensor fotoeléctrico desalineado y ajuste de"
+            " parámetros..."
         ),
     )
 
@@ -188,35 +229,49 @@ if menu == "Registrar Orden (Técnicos)":
     if submitted:
       if tecnico == "Selecciona un técnico...":
         st.error("Por favor selecciona tu nombre de la lista.")
-      elif not password_tecnico:
-        st.error("Debes ingresar tu contraseña de técnico para guardar.")
-      elif not equipo or not descripcion:
-        st.warning("Por favor completa los campos de equipo y descripción.")
+      elif not linea or not equipo or not num_orden or not descripcion:
+        st.warning(
+            "Por favor completa todos los campos obligatorios (Línea, Equipo,"
+            " Núm. de Orden y Descripción)."
+        )
       else:
-        match = df_tec_system[df_tec_system["Tecnico"] == str(tecnico).strip()]
+        # Cálculo automático de minutos entre hora de recepción y hora de cierre
+        dt_recepcion = datetime.combine(datetime.today(), hora_recepcion)
+        dt_cierre = datetime.combine(datetime.today(), hora_cierre)
 
-        if not match.empty:
-          pass_correcta = str(match["Password"].values[0]).strip()
-          pass_ingresada = str(password_tecnico).strip().replace(".0", "")
+        # Manejo por si cruza medianoche o hay desfase
+        if dt_cierre < dt_recepcion:
+          # Asumimos que pasó al día siguiente si la hora de cierre es menor
+          from datetime import timedelta
 
-          if pass_ingresada == pass_correcta:
-            nuevo_registro = {
-                "Fecha": fecha_actual,
-                "Turno": turno,
-                "Tecnico": tecnico,
-                "Equipo": equipo,
-                "Descripcion": descripcion,
-                "Minutos": minutos,
-            }
-            guardar_registro(nuevo_registro)
-            st.success("¡Orden registrada y validada con éxito!")
-          else:
-            st.error(
-                "Contraseña de técnico incorrecta. Verifica tu clave o"
-                " contacta al administrador."
-            )
-        else:
-          st.error("El técnico seleccionado no es válido en el sistema.")
+          dt_cierre += timedelta(days=1)
+
+        diferencia_minutos = int(
+            (dt_cierre - dt_recepcion).total_seconds() / 60
+        )
+
+        if diferencia_minutos < 0:
+          diferencia_minutos = 0
+
+        # Guardamos temporalmente los datos en session_state para pasarlos al modal
+        st.session_state["temp_orden"] = {
+            "Fecha": fecha_actual,
+            "Turno": turno,
+            "Tecnico": tecnico,
+            "Linea": linea,
+            "Equipo": equipo,
+            "NumOrden": num_orden,
+            "TipoMantenimiento": tipo_mtto,
+            "HoraRecepcion": hora_recepcion.strftime("%H:%M"),
+            "HoraCierre": hora_cierre.strftime("%H:%M"),
+            "Minutos": diferencia_minutos,
+            "Descripcion": descripcion,
+        }
+        st.rerun()
+
+  # Si el formulario disparó la validación, abrimos la ventana emergente automáticamente
+  if "temp_orden" in st.session_state:
+    modal_password_tecnico(st.session_state["temp_orden"])
 
 
 # ---------------------------------------------------------
@@ -253,14 +308,16 @@ elif menu == "📊 Resumen de Turno" and st.session_state["admin_logueado"]:
 
       m1, m2, m3 = st.columns(3)
       m1.metric(label="Total Órdenes Atendidas", value=total_ordenes)
-      m2.metric(label="Tiempo Total (Min)", value=f"{tiempo_total} min")
-      m3.metric(label="Tiempo Total (Horas)", value=f"{horas_totales} hrs")
+      m2.metric(label="Tiempo Total Invertido (Min)", value=f"{tiempo_total} min")
+      m3.metric(
+          label="Tiempo Total Invertido (Horas)", value=f"{horas_totales} hrs"
+      )
 
       st.markdown("### Desglose por Técnico en este Turno")
       resumen_tecnicos = (
           df_filtrado.groupby("Tecnico")
           .agg(
-              Ordenes_Atendidas=("Equipo", "count"),
+              Ordenes_Atendidas=("NumOrden", "count"),
               Minutos_Totales=("Minutos", "sum"),
           )
           .reset_index()
@@ -270,7 +327,7 @@ elif menu == "📊 Resumen de Turno" and st.session_state["admin_logueado"]:
       )
       st.dataframe(resumen_tecnicos, use_container_width=True)
 
-      st.markdown("### Detalle Completo de Órdenes")
+      st.markdown("### Detalle Completo de Órdenes del Turno")
       st.dataframe(df_filtrado, use_container_width=True)
 
       csv = df_filtrado.to_csv(index=False).encode("utf-8")
