@@ -34,7 +34,6 @@ def cargar_datos():
       df = pd.read_csv(DATA_FILE)
       if "Linea" in df.columns and "Area" not in df.columns:
         df = df.rename(columns={"Linea": "Area"})
-      # Compatibilidad con versiones anteriores si faltan columnas nuevas
       if "Minutos" in df.columns and "MinutosTrabajo" not in df.columns:
         df = df.rename(columns={"Minutos": "MinutosTrabajo"})
       for col in COLUMNAS_OFICIALES:
@@ -314,29 +313,24 @@ if menu == "Registrar Orden (Técnicos)":
             pass_ingresada_clean = str(pass_tecnico).strip().replace(".0", "")
 
             if pass_ingresada_clean == pass_correcta:
-              # Armar fechas completas para cálculo exacto (considerando turnos cruzados de medianoche)
               base_date = datetime.today()
               dt_e = datetime.combine(base_date, dt_emi.time())
               dt_r = datetime.combine(base_date, dt_rec.time())
               dt_c = datetime.combine(base_date, dt_cie.time())
 
-              # Ajuste de medianoche si el cierre o recepción ocurren al día siguiente
               if dt_r < dt_e:
                 dt_r += timedelta(days=1)
               if dt_c < dt_r:
                 dt_c += timedelta(days=1)
 
-              # 1. Tiempo de espera/atención (Emisión -> Recepción)
               min_espera = int((dt_r - dt_e).total_seconds() / 60)
               if min_espera < 0:
                 min_espera = 0
 
-              # 2. Tiempo de trabajo/reparación (Recepción -> Cierre)
               min_trabajo = int((dt_c - dt_r).total_seconds() / 60)
               if min_trabajo < 0:
                 min_trabajo = 0
 
-              # 3. Tiempo total de OT (Emisión -> Cierre)
               min_total = int((dt_c - dt_e).total_seconds() / 60)
               if min_total < 0:
                 min_total = 0
@@ -372,7 +366,7 @@ if menu == "Registrar Orden (Técnicos)":
 
 
 # ---------------------------------------------------------
-# VISTA 2: RESUMEN DE TURNO (Disponible para todos)
+# VISTA 2: RESUMEN DE TURNO (Con Búsqueda y Top Equipos)
 # ---------------------------------------------------------
 elif menu == "📊 Resumen de Turno":
   st.subheader("📊 Resumen y Cierre de Turno")
@@ -385,7 +379,8 @@ elif menu == "📊 Resumen de Turno":
         " un registro nuevo para inicializar la estructura."
     )
   else:
-    col1, col2 = st.columns(2)
+    # --- FILTROS DE FECHA, TURNO Y BÚSQUEDA RÁPIDA ---
+    col1, col2, col3 = st.columns(3)
     with col1:
       fechas_disponibles = sorted(
           [str(f) for f in df["Fecha"].dropna().unique()], reverse=True
@@ -396,19 +391,39 @@ elif menu == "📊 Resumen de Turno":
           df["Turno"].dropna().unique().astype(str)
       )
       turno_filtro = st.selectbox("Filtrar por Turno", turnos_disponibles)
+    with col3:
+      busqueda_texto = st.text_input(
+          "🔍 Búsqueda rápida",
+          placeholder="Busca por OT, equipo o técnico...",
+      )
 
     df_filtrado = df[df["Fecha"].astype(str) == str(fecha_filtro)]
     if turno_filtro != "Todos":
-      df_filtrado = df_filtrado[df_filtrado["Turno"].astype(str) == str(turno_filtro)]
+      df_filtrado = df_filtrado[
+          df_filtrado["Turno"].astype(str) == str(turno_filtro)
+      ]
+
+    # Aplicar filtro de búsqueda de texto si se ingresó algo
+    if busqueda_texto.strip():
+      query = busqueda_texto.strip().lower()
+      mask = (
+          df_filtrado["NumOrden"].astype(str).str.lower().str.contains(query)
+          | df_filtrado["Equipo"].astype(str).str.lower().str.contains(query)
+          | df_filtrado["Tecnico"].astype(str).str.lower().str.contains(query)
+          | df_filtrado["Descripcion"]
+          .astype(str)
+          .str.lower()
+          .str.contains(query)
+      )
+      df_filtrado = df_filtrado[mask]
 
     st.markdown("---")
 
     if df_filtrado.empty:
-      st.warning("No hay registros para los filtros seleccionados.")
+      st.warning("No hay registros para los filtros o búsqueda seleccionados.")
     else:
       total_ordenes = len(df_filtrado)
 
-      # Normalizar columnas numéricas de tiempo
       for col_t in ["MinutosEspera", "MinutosTrabajo", "MinutosTotalOT"]:
         if col_t in df_filtrado.columns:
           df_filtrado[col_t] = pd.to_numeric(
@@ -431,25 +446,41 @@ elif menu == "📊 Resumen de Turno":
       )
       m4.metric(label="Tiempo Total OTs", value=f"{t_total_ot} min")
 
-      st.markdown("### Desglose por Técnico en este Turno")
-      resumen_tecnicos = (
-          df_filtrado.groupby("Tecnico")
-          .agg(
-              Ordenes_Atendidas=("NumOrden", "count"),
-              Espera_Promedio_Min=("MinutosEspera", "mean"),
-              Trabajo_Total_Min=("MinutosTrabajo", "sum"),
-          )
-          .reset_index()
-      )
-      resumen_tecnicos["Espera_Promedio_Min"] = resumen_tecnicos[
-          "Espera_Promedio_Min"
-      ].round(1)
-      resumen_tecnicos["Trabajo_Total_Horas"] = round(
-          resumen_tecnicos["Trabajo_Total_Min"] / 60, 2
-      )
-      st.dataframe(resumen_tecnicos, use_container_width=True)
+      # --- NUEVO: TOP DE EQUIPOS CRÍTICOS (Fallas recurrentes) ---
+      col_sec1, col_sec2 = st.columns(2)
 
-      st.markdown("### Detalle Completo de Órdenes del Turno")
+      with col_sec1:
+        st.markdown("### 🏆 Top Equipos con más Fallas")
+        top_equipos = (
+            df_filtrado.groupby("Equipo")
+            .agg(Total_Fallas=("NumOrden", "count"))
+            .reset_index()
+            .sort_values(by="Total_Fallas", ascending=False)
+            .head(5)
+        )
+        st.dataframe(top_equipos, use_container_width=True, hide_index=True)
+
+      with col_sec2:
+        st.markdown("### 👨‍🔧 Desglose por Técnico")
+        resumen_tecnicos = (
+            df_filtrado.groupby("Tecnico")
+            .agg(
+                Ordenes_Atendidas=("NumOrden", "count"),
+                Espera_Promedio_Min=("MinutosEspera", "mean"),
+                Trabajo_Total_Min=("MinutosTrabajo", "sum"),
+            )
+            .reset_index()
+        )
+        resumen_tecnicos["Espera_Promedio_Min"] = resumen_tecnicos[
+            "Espera_Promedio_Min"
+        ].round(1)
+        resumen_tecnicos["Trabajo_Total_Horas"] = round(
+            resumen_tecnicos["Trabajo_Total_Min"] / 60, 2
+        )
+        st.dataframe(resumen_tecnicos, use_container_width=True, hide_index=True)
+
+      st.markdown("---")
+      st.markdown("### 📋 Detalle Completo de Órdenes del Turno")
 
       if st.session_state["admin_logueado"]:
         with st.expander("🛠️ Panel de Administrador: Eliminar Orden Errónea"):
