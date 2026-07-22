@@ -264,10 +264,6 @@ if categoria_usuario == "📝 Solicitante (Producción)":
       equipo_sol = st.text_input(
           "Equipo o Máquina", placeholder="Ej. Línea 2 - Envasadora"
       )
-      tipo_mtto_sol = st.selectbox(
-          "Tipo de Requerimiento",
-          ["Correctivo", "Ajuste", "Configuración de línea"],
-      )
     with col2:
       turno_sol = st.selectbox(
           "Turno Actual", ["Matutino", "Vespertino", "Nocturno", "Mixto"]
@@ -299,7 +295,7 @@ if categoria_usuario == "📝 Solicitante (Producción)":
             "Area": area_sol,
             "Equipo": equipo_sol,
             "NumOrden": num_ot_generado,
-            "TipoMantenimiento": tipo_mtto_sol,
+            "TipoMantenimiento": "Correctivo",
             "HoraEmision": datetime.now().strftime("%H:%M"),
             "HoraRecepcion": "--:--",
             "HoraCierre": "--:--",
@@ -345,7 +341,7 @@ elif categoria_usuario == "👷‍♂️ Técnico de Mantenimiento":
     for index, row in df_pendientes.iterrows():
       with st.expander(
           f"🔔 [{row['NumOrden']}] Área: {row['Area']} | Equipo:"
-          f" {row['Equipo']} ({row['TipoMantenimiento']})"
+          f" {row['Equipo']}"
       ):
         st.write(f"**Descripción del solicitante:** {row['Descripcion']}")
         st.write(
