@@ -566,12 +566,19 @@ elif categoria_usuario == "🛠️ Administrador (Gestión Total)":
           st.warning("Selecciona un técnico válido.")
 
     with tab_g2:
-      st.markdown("#### Áreas / Naves Actuales")
+      st.markdown("#### Áreas / Naves Registradas")
       lista_areas_actuales = cargar_areas()
-      st.write(lista_areas_actuales)
 
+      # Visualización profesional en forma de DataFrame / Tabla
+      df_areas_view = pd.DataFrame(
+          {"Área / Nave": lista_areas_actuales}
+      ).reset_index(drop=True)
+      df_areas_view.index = df_areas_view.index + 1
+      st.dataframe(df_areas_view, use_container_width=True)
+
+      st.markdown("---")
       st.markdown("#### Agregar Nueva Área")
-      n_area = st.text_input("Nueva Área o Nave")
+      n_area = st.text_input("Nombre de la Nueva Área o Nave")
       if st.button("Guardar Nueva Área"):
         ex, msg = agregar_area(n_area)
         if ex:
