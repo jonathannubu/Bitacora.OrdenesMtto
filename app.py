@@ -16,8 +16,10 @@ COLUMNAS_OFICIALES = [
     "Equipo",
     "NumOrden",
     "TipoMantenimiento",
+    "HoraEmision",
     "HoraRecepcion",
     "HoraCierre",
+    "HoraConformidad",
     "Minutos",
     "Descripcion",
 ]
@@ -160,7 +162,6 @@ st.title("⚙️ Bitácora Digital de Órdenes de Trabajo")
 st.sidebar.image("https://img.icons8.com/color/96/maintenance.png", width=80)
 st.sidebar.title("Navegación")
 
-# El Resumen ahora está disponible para TODOS los usuarios de forma permanente
 opciones_menu = ["Registrar Orden (Técnicos)", "📊 Resumen de Turno"]
 
 if st.session_state["admin_logueado"]:
@@ -169,7 +170,6 @@ if st.session_state["admin_logueado"]:
 menu = st.sidebar.selectbox("Selecciona una sección", opciones_menu)
 st.sidebar.markdown("---")
 
-# Control de Acceso Administrador en el Sidebar
 if not st.session_state["admin_logueado"]:
   with st.sidebar.expander("🔐 Acceso Administrador"):
     pass_ingresada = st.text_input(
@@ -214,27 +214,33 @@ if menu == "Registrar Orden (Técnicos)":
           "Equipo intervenido", placeholder="Ej. Banda Transportadora 3"
       )
       num_orden = st.text_input("Número de Orden (OT)", placeholder="Ej. OT-8492")
-
-    with col2:
       tipo_mtto = st.selectbox(
           "Clasificación de la OT",
           ["Correctivo", "Ajuste", "Configuración de línea"],
       )
+
+    with col2:
       turno = st.selectbox(
           "Turno", ["Matutino", "Vespertino", "Nocturno", "Mixto"]
       )
-
-      h_col1, h_col2 = st.columns(2)
-      with h_col1:
-        hora_recepcion = st.time_input(
-            "Hora Recepción OT", value=datetime.now().time()
-        )
-      with h_col2:
-        hora_cierre = st.time_input(
-            "Hora Cierre OT", value=datetime.now().time()
-        )
-
       fecha_actual = datetime.now().strftime("%Y-%m-%d")
+
+      # Captura rápida de tiempos en formato amigable de 4 columnas
+      st.markdown(
+          "⏱️ **Control de Tiempos (Horarios)**",
+          help="Captura rápida en formato Hora:Minuto",
+      )
+      t1, t2, t3, t4 = st.columns(4)
+      with t1:
+        hora_emision = st.time_input("Emisión", value=datetime.now().time())
+      with t2:
+        hora_recepcion = st.time_input("Recepción", value=datetime.now().time())
+      with t3:
+        hora_cierre = st.time_input("Cierre", value=datetime.now().time())
+      with t4:
+        hora_conformidad = st.time_input(
+            "Conformidad", value=datetime.now().time()
+        )
 
     descripcion = st.text_area(
         "Descripción del trabajo realizado",
@@ -285,6 +291,7 @@ if menu == "Registrar Orden (Técnicos)":
           pass_ingresada_clean = str(pass_tecnico).strip().replace(".0", "")
 
           if pass_ingresada_clean == pass_correcta:
+            # Cálculo automático de minutos basado en Recepción y Cierre
             dt_recepcion = datetime.combine(datetime.today(), hora_recepcion)
             dt_cierre = datetime.combine(datetime.today(), hora_cierre)
 
@@ -307,8 +314,10 @@ if menu == "Registrar Orden (Técnicos)":
                 "Equipo": equipo,
                 "NumOrden": num_orden,
                 "TipoMantenimiento": tipo_mtto,
+                "HoraEmision": hora_emision.strftime("%H:%M"),
                 "HoraRecepcion": hora_recepcion.strftime("%H:%M"),
                 "HoraCierre": hora_cierre.strftime("%H:%M"),
+                "HoraConformidad": hora_conformidad.strftime("%H:%M"),
                 "Minutos": diferencia_minutos,
                 "Descripcion": descripcion,
             }
@@ -387,15 +396,12 @@ elif menu == "📊 Resumen de Turno":
 
       st.markdown("### Detalle Completo de Órdenes del Turno")
 
-      # Sección exclusiva para administrador: Eliminar orden errónea
       if st.session_state["admin_logueado"]:
         with st.expander("🛠️ Panel de Administrador: Eliminar Orden Errónea"):
           st.warning(
               "Aquí puedes eliminar cualquier orden registrada por error."
           )
-          # Mostramos el dataframe completo con índices originales para que el admin sepa cuál borrar
           df_global = cargar_datos()
-          # Mapeamos los índices reales del archivo completo
           indices_filtro = df_filtrado.index.tolist()
 
           if indices_filtro:
