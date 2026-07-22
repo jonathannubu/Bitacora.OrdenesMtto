@@ -204,6 +204,8 @@ if menu == "Registrar Orden (Técnicos)":
   )
   lista_areas_activas = ["Selecciona un área..."] + cargar_areas()
 
+  hora_actual_str = datetime.now().strftime("%H:%M")
+
   with st.form("form_orden"):
     col1, col2 = st.columns(2)
 
@@ -225,22 +227,18 @@ if menu == "Registrar Orden (Técnicos)":
       )
       fecha_actual = datetime.now().strftime("%Y-%m-%d")
 
-      # Captura rápida de tiempos en formato amigable de 4 columnas
       st.markdown(
-          "⏱️ **Control de Tiempos (Horarios)**",
-          help="Captura rápida en formato Hora:Minuto",
+          "⏱️ **Control de Horarios** *(Teclea rápido, formato HH:MM)*"
       )
       t1, t2, t3, t4 = st.columns(4)
       with t1:
-        hora_emision = st.time_input("Emisión", value=datetime.now().time())
+        h_emision = st.text_input("Emisión", value=hora_actual_str)
       with t2:
-        hora_recepcion = st.time_input("Recepción", value=datetime.now().time())
+        h_recepcion = st.text_input("Recepción", value=hora_actual_str)
       with t3:
-        hora_cierre = st.time_input("Cierre", value=datetime.now().time())
+        h_cierre = st.text_input("Cierre", value=hora_actual_str)
       with t4:
-        hora_conformidad = st.time_input(
-            "Conformidad", value=datetime.now().time()
-        )
+        h_conformidad = st.text_input("Conformidad", value=hora_actual_str)
 
     descripcion = st.text_area(
         "Descripción del trabajo realizado",
@@ -285,50 +283,79 @@ if menu == "Registrar Orden (Técnicos)":
       elif not pass_tecnico:
         st.error("Por favor ingresa tu contraseña de técnico.")
       else:
-        match = df_tec_system[df_tec_system["Tecnico"] == tecnico.strip()]
-        if not match.empty:
-          pass_correcta = str(match["Password"].values[0]).strip()
-          pass_ingresada_clean = str(pass_tecnico).strip().replace(".0", "")
+        # Validar formato simple de horas
+        def limpiar_hora(texto_hora):
+          texto_hora = texto_hora.strip()
+          try:
+            # Intenta parsear como HH:MM
+            parsed = datetime.strptime(texto_hora, "%H:%M")
+            return parsed.strftime("%H:%M"), parsed
+          except ValueError:
+            try:
+              # Intenta por si acaso ponen H:MM
+              parsed = datetime.strptime(texto_hora, "%H:%M")
+              return parsed.strftime("%H:%M"), parsed
+            except:
+              return None, None
 
-          if pass_ingresada_clean == pass_correcta:
-            # Cálculo automático de minutos basado en Recepción y Cierre
-            dt_recepcion = datetime.combine(datetime.today(), hora_recepcion)
-            dt_cierre = datetime.combine(datetime.today(), hora_cierre)
+        rec_str, dt_rec_obj = limpiar_hora(h_recepcion)
+        cie_str, dt_cie_obj = limpiar_hora(h_cierre)
+        emi_str, _ = limpiar_hora(h_emision)
+        con_str, _ = limpiar_hora(h_conformidad)
 
-            if dt_cierre < dt_recepcion:
-              from datetime import timedelta
-
-              dt_cierre += timedelta(days=1)
-
-            diferencia_minutos = int(
-                (dt_cierre - dt_recepcion).total_seconds() / 60
-            )
-            if diferencia_minutos < 0:
-              diferencia_minutos = 0
-
-            nuevo_registro = {
-                "Fecha": fecha_actual,
-                "Turno": turno,
-                "Tecnico": tecnico,
-                "Area": area,
-                "Equipo": equipo,
-                "NumOrden": num_orden,
-                "TipoMantenimiento": tipo_mtto,
-                "HoraEmision": hora_emision.strftime("%H:%M"),
-                "HoraRecepcion": hora_recepcion.strftime("%H:%M"),
-                "HoraCierre": hora_cierre.strftime("%H:%M"),
-                "HoraConformidad": hora_conformidad.strftime("%H:%M"),
-                "Minutos": diferencia_minutos,
-                "Descripcion": descripcion,
-            }
-
-            guardar_registro(nuevo_registro)
-            st.success("¡Orden registrada y validada con éxito!")
-            st.rerun()
-          else:
-            st.error("Contraseña incorrecta para el técnico seleccionado.")
+        if not rec_str or not cie_str or not emi_str or not con_str:
+          st.error(
+              "Formato de hora incorrecto. Usa el formato de 24 horas (Ej. 08:30"
+              " o 14:15)."
+          )
         else:
-          st.error("Error al identificar al técnico seleccionado.")
+          match = df_tec_system[df_tec_system["Tecnico"] == tecnico.strip()]
+          if not match.empty:
+            pass_correcta = str(match["Password"].values[0]).strip()
+            pass_ingresada_clean = str(pass_tecnico).strip().replace(".0", "")
+
+            if pass_ingresada_clean == pass_correcta:
+              # Cálculo automático de minutos basado en Recepción y Cierre
+              dt_recepcion = datetime.combine(datetime.today(), dt_rec_obj.time())
+              dt_cierre = datetime.combine(datetime.today(), dt_cie_obj.time())
+
+              if dt_cierre < dt_recepcion:
+                from datetime import timedelta
+
+                dt_cierre += timedelta(days=1)
+
+              diferencia_minutos = int(
+                  (dt_cierre - dt_recepcion).total_seconds() / 60
+              )
+              if diferencia_minutos < 0:
+                diferencia_minutos = 0
+
+              nuevo_registro = {
+                  "Fecha": fecha_actual,
+                  "Turno": turno,
+                  "Tecnico": tecnico,
+                  "Area": area,
+                  "Equipo": equipo,
+                  "NumOrden": num_orden,
+                  "TipoMantenimiento": tipo_mtto,
+                  "HoraEmision": emi_str,
+                  "HoraRecepcion": rec_str,
+                  "HoraCierre": cie_str,
+                  "HoraConformidad": con_str,
+                  "Minutos": diferencia_minutos,
+                  "Descripcion": descripcion,
+              }
+
+              guardar_registro(nuevo_registro)
+              st.success("¡Orden registrada y validada con éxito!")
+              st.rerun()
+            else:
+              st.error(
+                  "Contraseña incorrecta para el técnico seleccionado. Verifica"
+                  " tu clave."
+              )
+          else:
+            st.error("Error al identificar al técnico seleccionado.")
 
 
 # ---------------------------------------------------------
