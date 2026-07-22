@@ -46,6 +46,15 @@ def guardar_registro(nuevo_dato):
   df.to_csv(DATA_FILE, index=False)
 
 
+def eliminar_orden(index_a_borrar):
+  df = cargar_datos()
+  if 0 <= index_a_borrar < len(df):
+    df = df.drop(index_a_borrar).reset_index(drop=True)
+    df.to_csv(DATA_FILE, index=False)
+    return True, "Orden eliminada exitosamente."
+  return False, "Índice de orden inválido."
+
+
 # Gestión de Técnicos
 def cargar_tecnicos_df():
   if os.path.exists(TECNICOS_FILE):
@@ -142,7 +151,6 @@ st.set_page_config(
     page_title="Bitácora de Mantenimiento", page_icon="⚙️", layout="wide"
 )
 
-# Inicializar estados de sesión de forma segura
 if "admin_logueado" not in st.session_state:
   st.session_state["admin_logueado"] = False
 
@@ -152,12 +160,11 @@ st.title("⚙️ Bitácora Digital de Órdenes de Trabajo")
 st.sidebar.image("https://img.icons8.com/color/96/maintenance.png", width=80)
 st.sidebar.title("Navegación")
 
-# Definir opciones del menú dinámicamente asegurando que el administrador las vea
-opciones_menu = ["Registrar Orden (Técnicos)"]
+# El Resumen ahora está disponible para TODOS los usuarios de forma permanente
+opciones_menu = ["Registrar Orden (Técnicos)", "📊 Resumen de Turno"]
+
 if st.session_state["admin_logueado"]:
-  opciones_menu.extend(
-      ["📊 Resumen de Turno", "👥 Gestionar Personal y Áreas"]
-  )
+  opciones_menu.append("👥 Gestionar Personal y Áreas")
 
 menu = st.sidebar.selectbox("Selecciona una sección", opciones_menu)
 st.sidebar.markdown("---")
@@ -316,9 +323,9 @@ if menu == "Registrar Orden (Técnicos)":
 
 
 # ---------------------------------------------------------
-# VISTA 2: RESUMEN DE TURNO (Exclusivo Administrador)
+# VISTA 2: RESUMEN DE TURNO (Disponible para todos)
 # ---------------------------------------------------------
-elif menu == "📊 Resumen de Turno" and st.session_state["admin_logueado"]:
+elif menu == "📊 Resumen de Turno":
   st.subheader("📊 Resumen y Cierre de Turno")
 
   df = cargar_datos()
@@ -379,6 +386,39 @@ elif menu == "📊 Resumen de Turno" and st.session_state["admin_logueado"]:
       st.dataframe(resumen_tecnicos, use_container_width=True)
 
       st.markdown("### Detalle Completo de Órdenes del Turno")
+
+      # Sección exclusiva para administrador: Eliminar orden errónea
+      if st.session_state["admin_logueado"]:
+        with st.expander("🛠️ Panel de Administrador: Eliminar Orden Errónea"):
+          st.warning(
+              "Aquí puedes eliminar cualquier orden registrada por error."
+          )
+          # Mostramos el dataframe completo con índices originales para que el admin sepa cuál borrar
+          df_global = cargar_datos()
+          # Mapeamos los índices reales del archivo completo
+          indices_filtro = df_filtrado.index.tolist()
+
+          if indices_filtro:
+            opcion_borrar = st.selectbox(
+                "Selecciona la Orden a eliminar (por Número de Orden y Equipo)",
+                options=indices_filtro,
+                format_func=lambda x: (
+                    f"Índice {x} | Fecha: {df_global.loc[x, 'Fecha']} | OT:"
+                    f" {df_global.loc[x, 'NumOrden']} | Equipo:"
+                    f" {df_global.loc[x, 'Equipo']} | Técnico:"
+                    f" {df_global.loc[x, 'Tecnico']}"
+                ),
+            )
+            if st.button("🗑️ Eliminar Orden Seleccionada", type="primary"):
+              exito, msg = eliminar_orden(opcion_borrar)
+              if exito:
+                st.success(msg)
+                st.rerun()
+              else:
+                st.error(msg)
+          else:
+            st.info("No hay órdenes disponibles para eliminar en este filtro.")
+
       st.dataframe(df_filtrado, use_container_width=True)
 
       csv = df_filtrado.to_csv(index=False).encode("utf-8")
