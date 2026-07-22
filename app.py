@@ -160,6 +160,10 @@ st.set_page_config(
 if "admin_logueado" not in st.session_state:
   st.session_state["admin_logueado"] = False
 
+# Control de estado para mostrar mensaje de éxito persistente tras el rerun
+if "mensaje_exito_ot" not in st.session_state:
+  st.session_state["mensaje_exito_ot"] = None
+
 st.title("⚙️ Bitácora Digital de Órdenes de Trabajo")
 
 # --- MENÚ LATERAL ---
@@ -201,6 +205,13 @@ st.sidebar.markdown("---")
 if menu == "Registrar Orden (Técnicos)":
   st.subheader("📝 Registro de Orden de Trabajo")
   st.markdown("Completa los datos de la intervención realizada.")
+
+  # Mostrar alerta visual si se acaba de registrar una orden exitosamente
+  if st.session_state["mensaje_exito_ot"]:
+    st.success(st.session_state["mensaje_exito_ot"])
+    st.session_state["mensaje_exito_ot"] = (
+        None  # Limpiar para que no se repita al interactuar
+    )
 
   df_tec_system = cargar_tecnicos_df()
   lista_tecnicos_activos = ["Selecciona un técnico..."] + list(
@@ -354,7 +365,12 @@ if menu == "Registrar Orden (Técnicos)":
               }
 
               guardar_registro(nuevo_registro)
-              st.success("¡Orden registrada y validada con éxito!")
+
+              # Guardar mensaje de éxito detallado en session state para mostrarlo limpio
+              st.session_state["mensaje_exito_ot"] = (
+                  f"✅ ¡Orden {num_orden} guardada exitosamente! "
+                  f"(T. Espera: {min_espera} min | T. Trabajo: {min_trabajo} min | Total: {min_total} min)"
+              )
               st.rerun()
             else:
               st.error(
@@ -366,7 +382,7 @@ if menu == "Registrar Orden (Técnicos)":
 
 
 # ---------------------------------------------------------
-# VISTA 2: RESUMEN DE TURNO (Con Búsqueda y Top Equipos)
+# VISTA 2: RESUMEN DE TURNO (Con Búsqueda y Top Equipos por Área)
 # ---------------------------------------------------------
 elif menu == "📊 Resumen de Turno":
   st.subheader("📊 Resumen y Cierre de Turno")
@@ -379,7 +395,6 @@ elif menu == "📊 Resumen de Turno":
         " un registro nuevo para inicializar la estructura."
     )
   else:
-    # --- FILTROS DE FECHA, TURNO Y BÚSQUEDA RÁPIDA ---
     col1, col2, col3 = st.columns(3)
     with col1:
       fechas_disponibles = sorted(
@@ -403,7 +418,6 @@ elif menu == "📊 Resumen de Turno":
           df_filtrado["Turno"].astype(str) == str(turno_filtro)
       ]
 
-    # Aplicar filtro de búsqueda de texto si se ingresó algo
     if busqueda_texto.strip():
       query = busqueda_texto.strip().lower()
       mask = (
@@ -446,13 +460,15 @@ elif menu == "📊 Resumen de Turno":
       )
       m4.metric(label="Tiempo Total OTs", value=f"{t_total_ot} min")
 
-      # --- NUEVO: TOP DE EQUIPOS CRÍTICOS (Fallas recurrentes) ---
+      # --- TOP EQUIPOS CRÍTICOS (Agrupando por Área y Equipo de forma separada) ---
       col_sec1, col_sec2 = st.columns(2)
 
       with col_sec1:
-        st.markdown("### 🏆 Top Equipos con más Fallas")
+        st.markdown(
+            "🏆 **Top Equipos con más Fallas** *(Distinguido por Área)*"
+        )
         top_equipos = (
-            df_filtrado.groupby("Equipo")
+            df_filtrado.groupby(["Area", "Equipo"])
             .agg(Total_Fallas=("NumOrden", "count"))
             .reset_index()
             .sort_values(by="Total_Fallas", ascending=False)
