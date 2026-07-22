@@ -56,9 +56,11 @@ def guardar_nueva_solicitud(datos):
   cursor = conn.cursor()
   cursor.execute(
       """
-        INSERT INTO ordenes (Fecha, Turno, Tecnico, Departamento, Area, Equipo, NumOrden, TipoMantenimiento, 
-                             HoraEmision, HoraRecepcion, HoraCierre, HoraConformidad, 
-                             MinutosEspera, MinutosTrabajo, MinutosTotalOT, Descripcion, Estado)
+        INSERT INTO ordenes (
+            Fecha, Turno, Tecnico, Departamento, Area, Equipo, NumOrden, TipoMantenimiento, 
+            HoraEmision, HoraRecepcion, HoraCierre, HoraConformidad, 
+            MinutosEspera, MinutosTrabajo, MinutosTotalOT, Descripcion, Estado
+        )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """,
       (
