@@ -4,7 +4,7 @@ import sqlite3
 import pandas as pd
 import streamlit as st
 
-# Archivos exclusivos para la versión de pruebas
+# Base de datos SQLite unificada exclusiva para la versión BETA
 DB_FILE = "bitacora_beta.db"
 TECNICOS_FILE = "tecnicos_beta.csv"
 AREAS_FILE = "areas_beta.csv"
@@ -117,7 +117,7 @@ def eliminar_orden_db(id_orden):
   conn.close()
 
 
-# Gestión de Técnicos (CSV auxiliar)
+# Gestión de Técnicos (CSV auxiliar beta)
 def cargar_tecnicos_df():
   if os.path.exists(TECNICOS_FILE):
     df_tec = pd.read_csv(TECNICOS_FILE, dtype=str)
@@ -169,7 +169,7 @@ def eliminar_tecnico(nombre_a_borrar):
   return True, "Técnico eliminado correctamente."
 
 
-# Gestión de Áreas
+# Gestión de Áreas (CSV auxiliar beta)
 def cargar_areas():
   if os.path.exists(AREAS_FILE):
     df_area = pd.read_csv(AREAS_FILE, dtype=str)
@@ -209,12 +209,14 @@ def eliminar_area(area_a_borrar):
   return False, "El área no existe."
 
 
-# Inicializar Base de Datos
+# Inicializar Base de Datos Beta
 inicializar_bd()
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
-    page_title="Mesa de Ayuda - Avangard Labs", page_icon="⚙️", layout="wide"
+    page_title="Mesa de Ayuda [BETA] - Avangard Labs",
+    page_icon="⚙️",
+    layout="wide",
 )
 
 if "mensaje_alerta" not in st.session_state:
@@ -223,11 +225,11 @@ if "mensaje_alerta" not in st.session_state:
 if "hora_default" not in st.session_state:
   st.session_state["hora_default"] = datetime.now().strftime("%H:%M")
 
-st.title("⚙️ Sistema de Órdenes de Trabajo - Avangard Labs")
+st.title("⚙️ Sistema de Órdenes de Trabajo (Fase Beta) - Avangard Labs")
 
 # --- MENÚ LATERAL: 3 CATEGORÍAS DE USUARIOS ---
 st.sidebar.image("https://img.icons8.com/color/96/maintenance.png", width=80)
-st.sidebar.title("Selección de Rol")
+st.sidebar.title("Selección de Rol [BETA]")
 
 categoria_usuario = st.sidebar.selectbox(
     "¿Quién está ingresando?",
@@ -356,7 +358,7 @@ elif categoria_usuario == "👷‍♂️ Técnico de Mantenimiento":
             df_tec_system["Tecnico"]
         )
 
-        with st.form(f"form_atencion_{row['id']}">) as f:
+        with st.form(f"form_atencion_{row['id']}") as f:
           col_t1, col_t2 = st.columns(2)
           with col_t1:
             tec_asignado = st.selectbox(
@@ -461,12 +463,12 @@ elif categoria_usuario == "👷‍♂️ Técnico de Mantenimiento":
 # CATEGORÍA 3: VISUALIZADOR / GERENCIA
 # ---------------------------------------------------------
 elif categoria_usuario == "📊 Visualizador / Gerencia":
-  st.subheader("📊 Panel Gerencial y Resumen de Turnos")
+  st.subheader("📊 Panel Gerencial y Resumen de Turnos [BETA]")
 
   df_all = cargar_datos_db()
 
   if df_all.empty:
-    st.info("Aún no hay registros en la base de datos.")
+    st.info("Aún no hay registros en la base de datos de pruebas.")
   else:
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -513,7 +515,7 @@ elif categoria_usuario == "📊 Visualizador / Gerencia":
       st.markdown("### 📋 Detalle de Órdenes")
       st.dataframe(df_f, use_container_width=True)
 
-      # Sección de administración interna para gerencia (gestión de técnicos y áreas)
+      # Sección de administración interna para gerencia
       st.markdown("---")
       with st.expander("⚙️ Configuración del Sistema (Personal y Áreas)"):
         pass_gerencia = st.text_input(
