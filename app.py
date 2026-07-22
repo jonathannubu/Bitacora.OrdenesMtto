@@ -6,6 +6,7 @@ import streamlit as st
 # Archivos de datos
 DATA_FILE = "bitacora_mantenimiento.csv"
 TECNICOS_FILE = "tecnicos_activos.csv"
+AREAS_FILE = "areas_activas.csv"
 
 
 # --- FUNCIONES DE DATOS ---
@@ -18,7 +19,7 @@ def cargar_datos():
             "Fecha",
             "Turno",
             "Tecnico",
-            "Linea",
+            "Area",
             "Equipo",
             "NumOrden",
             "TipoMantenimiento",
@@ -36,6 +37,7 @@ def guardar_registro(nuevo_dato):
   df.to_csv(DATA_FILE, index=False)
 
 
+# Gestión de Técnicos
 def cargar_tecnicos_df():
   if os.path.exists(TECNICOS_FILE):
     df_tec = pd.read_csv(TECNICOS_FILE, dtype=str)
@@ -85,12 +87,52 @@ def eliminar_tecnico(nombre_a_borrar):
   return True, "Técnico eliminado correctamente."
 
 
+# Gestión de Áreas
+def cargar_areas():
+  if os.path.exists(AREAS_FILE):
+    df_area = pd.read_csv(AREAS_FILE, dtype=str)
+    return df_area["Area"].fillna("").astype(str).str.strip().tolist()
+  else:
+    # Áreas iniciales por defecto
+    areas_iniciales = [
+        "Nave 1 - Envasado",
+        "Nave 2 - Producción",
+        "Nave 3 - Empaque",
+        "Nave 4 - Mantenimiento General",
+    ]
+    df_area = pd.DataFrame({"Area": areas_iniciales})
+    df_area.to_csv(AREAS_FILE, index=False)
+    return areas_iniciales
+
+
+def agregar_area(nueva_area):
+  areas = cargar_areas()
+  nueva_area = str(nueva_area).strip()
+  if not nueva_area:
+    return False, "El nombre del área no puede estar vacío."
+  if nueva_area in areas:
+    return False, "Esta área ya existe en el sistema."
+
+  areas.append(nueva_area)
+  pd.DataFrame({"Area": areas}).to_csv(AREAS_FILE, index=False)
+  return True, f"Área '{nueva_area}' agregada exitosamente."
+
+
+def eliminar_area(area_a_borrar):
+  areas = cargar_areas()
+  if len(areas) <= 1:
+    return False, "Debes mantener al menos un área registrada."
+  if area_a_borrar in areas:
+    areas.remove(area_a_borrar)
+    pd.DataFrame({"Area": areas}).to_csv(AREAS_FILE, index=False)
+    return True, "Área eliminada correctamente."
+  return False, "El área seleccionada no existe."
+
+
 # --- VENTANA EMERGENTE (MODAL) PARA CONTRASEÑA DE TÉCNICO ---
 @st.dialog("🔒 Validación de Identidad del Técnico")
 def modal_password_tecnico(datos_orden):
-  st.write(
-      f"Técnico seleccionado: **{datos_orden['Tecnico']}**"
-  )
+  st.write(f"Técnico seleccionado: **{datos_orden['Tecnico']}**")
   st.write(
       "Ingresa tu contraseña personal para confirmar y guardar la orden de"
       " trabajo:"
@@ -115,7 +157,6 @@ def modal_password_tecnico(datos_orden):
         if pass_ingresada_clean == pass_correcta:
           guardar_registro(datos_orden)
           st.success("¡Orden registrada y validada con éxito!")
-          # Limpiamos los datos temporales del formulario
           del st.session_state["temp_orden"]
           st.rerun()
         else:
@@ -145,7 +186,7 @@ st.sidebar.title("Navegación")
 opciones_menu = ["Registrar Orden (Técnicos)"]
 if st.session_state["admin_logueado"]:
   opciones_menu.append("📊 Resumen de Turno")
-  opciones_menu.append("👥 Gestionar Técnicos")
+  opciones_menu.append("👥 Gestionar Personal y Áreas")
 
 menu = st.sidebar.selectbox("Selecciona una sección", opciones_menu)
 st.sidebar.markdown("---")
@@ -180,15 +221,14 @@ if menu == "Registrar Orden (Técnicos)":
   lista_tecnicos_activos = ["Selecciona un técnico..."] + list(
       df_tec_system["Tecnico"]
   )
+  lista_areas_activas = ["Selecciona un área..."] + cargar_areas()
 
   with st.form("form_orden"):
     col1, col2 = st.columns(2)
 
     with col1:
       tecnico = st.selectbox("Técnico responsable", lista_tecnicos_activos)
-      linea = st.text_input(
-          "Línea o Área", placeholder="Ej. Nave 2 / Línea de Empaque"
-      )
+      area = st.selectbox("Área", lista_areas_activas)
       equipo = st.text_input(
           "Equipo intervenido", placeholder="Ej. Banda Transportadora 3"
       )
@@ -203,7 +243,6 @@ if menu == "Registrar Orden (Técnicos)":
           "Turno", ["Matutino", "Vespertino", "Nocturno", "Mixto"]
       )
 
-      # Horas de recepción y cierre
       h_col1, h_col2 = st.columns(2)
       with h_col1:
         hora_recepcion = st.time_input(
@@ -229,19 +268,18 @@ if menu == "Registrar Orden (Técnicos)":
     if submitted:
       if tecnico == "Selecciona un técnico...":
         st.error("Por favor selecciona tu nombre de la lista.")
-      elif not linea or not equipo or not num_orden or not descripcion:
+      elif area == "Selecciona un área...":
+        st.error("Por favor selecciona el área correspondiente.")
+      elif not equipo or not num_orden or not descripcion:
         st.warning(
-            "Por favor completa todos los campos obligatorios (Línea, Equipo,"
-            " Núm. de Orden y Descripción)."
+            "Por favor completa todos los campos obligatorios (Equipo, Núm. de"
+            " Orden y Descripción)."
         )
       else:
-        # Cálculo automático de minutos entre hora de recepción y hora de cierre
         dt_recepcion = datetime.combine(datetime.today(), hora_recepcion)
         dt_cierre = datetime.combine(datetime.today(), hora_cierre)
 
-        # Manejo por si cruza medianoche o hay desfase
         if dt_cierre < dt_recepcion:
-          # Asumimos que pasó al día siguiente si la hora de cierre es menor
           from datetime import timedelta
 
           dt_cierre += timedelta(days=1)
@@ -249,16 +287,14 @@ if menu == "Registrar Orden (Técnicos)":
         diferencia_minutos = int(
             (dt_cierre - dt_recepcion).total_seconds() / 60
         )
-
         if diferencia_minutos < 0:
           diferencia_minutos = 0
 
-        # Guardamos temporalmente los datos en session_state para pasarlos al modal
         st.session_state["temp_orden"] = {
             "Fecha": fecha_actual,
             "Turno": turno,
             "Tecnico": tecnico,
-            "Linea": linea,
+            "Area": area,
             "Equipo": equipo,
             "NumOrden": num_orden,
             "TipoMantenimiento": tipo_mtto,
@@ -269,7 +305,6 @@ if menu == "Registrar Orden (Técnicos)":
         }
         st.rerun()
 
-  # Si el formulario disparó la validación, abrimos la ventana emergente automáticamente
   if "temp_orden" in st.session_state:
     modal_password_tecnico(st.session_state["temp_orden"])
 
@@ -340,49 +375,91 @@ elif menu == "📊 Resumen de Turno" and st.session_state["admin_logueado"]:
 
 
 # ---------------------------------------------------------
-# VISTA 3: GESTIÓN DE TÉCNICOS (Exclusivo Administrador)
+# VISTA 3: GESTIÓN DE PERSONAL Y ÁREAS (Exclusivo Administrador)
 # ---------------------------------------------------------
-elif menu == "👥 Gestionar Técnicos" and st.session_state["admin_logueado"]:
-  st.subheader("👥 Administración de Personal Técnico y Claves")
+elif menu == "👥 Gestionar Personal y Áreas" and st.session_state["admin_logueado"]:
+  st.subheader("👥 Administración de Personal y Áreas de Planta")
   st.markdown(
-      "Asigna o cambia la contraseña personal de cada técnico para sus"
-      " registros."
+      "Gestiona los técnicos con sus contraseñas y las áreas o naves de la"
+      " planta."
   )
 
-  col_add, col_del = st.columns(2)
+  tab1, tab2 = st.tabs(["🔧 Gestionar Técnicos", "🏭 Gestionar Áreas"])
 
-  with col_add:
-    st.markdown("#### ➕ Registrar o Actualizar Técnico")
-    nombre_tec = st.text_input(
-        "Nombre del técnico", placeholder="Ej. Carlos Mendoza"
-    )
-    pass_tec = st.text_input(
-        "Contraseña asignada",
-        type="password",
-        placeholder="Clave de 4 dígitos o texto",
-    )
-    if st.button("Guardar Técnico"):
-      exito, msg = agregar_o_actualizar_tecnico(nombre_tec, pass_tec)
-      if exito:
-        st.success(msg)
-        st.rerun()
-      else:
-        st.error(msg)
+  # --- TAB 1: TÉCNICOS ---
+  with tab1:
+    col_add, col_del = st.columns(2)
 
-  with col_del:
-    st.markdown("#### 🗑️ Eliminar Técnico")
-    df_tec_current = cargar_tecnicos_df()
-    tec_a_borrar = st.selectbox(
-        "Selecciona el técnico a remover", df_tec_current["Tecnico"]
-    )
-    if st.button("Eliminar de la lista"):
-      exito, msg = eliminar_tecnico(tec_a_borrar)
-      if exito:
-        st.success(msg)
-        st.rerun()
-      else:
-        st.error(msg)
+    with col_add:
+      st.markdown("#### ➕ Registrar o Actualizar Técnico")
+      nombre_tec = st.text_input(
+          "Nombre del técnico", placeholder="Ej. Carlos Mendoza"
+      )
+      pass_tec = st.text_input(
+          "Contraseña asignada",
+          type="password",
+          placeholder="Clave de 4 dígitos o texto",
+          key="pass_tec_input",
+      )
+      if st.button("Guardar Técnico"):
+        exito, msg = agregar_o_actualizar_tecnico(nombre_tec, pass_tec)
+        if exito:
+          st.success(msg)
+          st.rerun()
+        else:
+          st.error(msg)
 
-  st.markdown("---")
-  st.markdown("#### 📋 Plantilla Actual de Personal (Vista Admin)")
-  st.dataframe(df_tec_current, use_container_width=True)
+    with col_del:
+      st.markdown("#### 🗑️ Eliminar Técnico")
+      df_tec_current = cargar_tecnicos_df()
+      tec_a_borrar = st.selectbox(
+          "Selecciona el técnico a remover", df_tec_current["Tecnico"]
+      )
+      if st.button("Eliminar Técnico"):
+        exito, msg = eliminar_tecnico(tec_a_borrar)
+        if exito:
+          st.success(msg)
+          st.rerun()
+        else:
+          st.error(msg)
+
+    st.markdown("---")
+    st.markdown("#### 📋 Plantilla Actual de Personal")
+    st.dataframe(df_tec_current, use_container_width=True)
+
+  # --- TAB 2: ÁREAS ---
+  with tab2:
+    col_area_add, col_area_del = st.columns(2)
+
+    with col_area_add:
+      st.markdown("#### ➕ Registrar Nueva Área")
+      nueva_area_input = st.text_input(
+          "Nombre del Área o Nave",
+          placeholder="Ej. Nave 5 - Ensamble o Línea de Pintura",
+      )
+      if st.button("Guardar Área"):
+        exito, msg = agregar_area(nueva_area_input)
+        if exito:
+          st.success(msg)
+          st.rerun()
+        else:
+          st.error(msg)
+
+    with col_area_del:
+      st.markdown("#### 🗑️ Eliminar Área")
+      areas_current = cargar_areas()
+      area_a_borrar = st.selectbox(
+          "Selecciona el área a remover", areas_current
+      )
+      if st.button("Eliminar Área"):
+        exito, msg = eliminar_area(area_a_borrar)
+        if exito:
+          st.success(msg)
+          st.rerun()
+        else:
+          st.error(msg)
+
+    st.markdown("---")
+    st.markdown("#### 🏭 Áreas Registradas Actualmente")
+    df_areas_view = pd.DataFrame({"Áreas / Naves": cargar_areas()})
+    st.dataframe(df_areas_view, use_container_width=True)
