@@ -8,27 +8,43 @@ DATA_FILE = "bitacora_mantenimiento.csv"
 TECNICOS_FILE = "tecnicos_activos.csv"
 AREAS_FILE = "areas_activas.csv"
 
+# Columnas oficiales que debe tener la bitácora
+COLUMNAS_OFICIALES = [
+    "Fecha",
+    "Turno",
+    "Tecnico",
+    "Area",
+    "Equipo",
+    "NumOrden",
+    "TipoMantenimiento",
+    "HoraRecepcion",
+    "HoraCierre",
+    "Minutos",
+    "Descripcion",
+]
+
 
 # --- FUNCIONES DE DATOS ---
 def cargar_datos():
   if os.path.exists(DATA_FILE):
-    return pd.read_csv(DATA_FILE)
+    try:
+      df = pd.read_csv(DATA_FILE)
+      # Si por alguna razón el archivo viejo tiene 'Linea' en vez de 'Area', lo renombramos
+      if "Linea" in df.columns and "Area" not in df.columns:
+        df = df.rename(columns={"Linea": "Area"})
+
+      # Verificamos que existan todas las columnas oficiales; si falta alguna, la agregamos vacía
+      for col in COLUMNAS_OFICIALES:
+        if col not in df.columns:
+          df[col] = ""
+
+      # Nos quedamos estrictamente con el orden oficial
+      return df[COLUMNAS_OFICIALES]
+    except Exception:
+      # Si el archivo está corrupto o da error, devolvemos un DataFrame limpio
+      return pd.DataFrame(columns=COLUMNAS_OFICIALES)
   else:
-    return pd.DataFrame(
-        columns=[
-            "Fecha",
-            "Turno",
-            "Tecnico",
-            "Area",
-            "Equipo",
-            "NumOrden",
-            "TipoMantenimiento",
-            "HoraRecepcion",
-            "HoraCierre",
-            "Minutos",
-            "Descripcion",
-        ]
-    )
+    return pd.DataFrame(columns=COLUMNAS_OFICIALES)
 
 
 def guardar_registro(nuevo_dato):
@@ -93,7 +109,6 @@ def cargar_areas():
     df_area = pd.read_csv(AREAS_FILE, dtype=str)
     return df_area["Area"].fillna("").astype(str).str.strip().tolist()
   else:
-    # Áreas iniciales por defecto
     areas_iniciales = [
         "Nave 1 - Envasado",
         "Nave 2 - Producción",
@@ -317,20 +332,27 @@ elif menu == "📊 Resumen de Turno" and st.session_state["admin_logueado"]:
 
   df = cargar_datos()
 
-  if df.empty:
-    st.info("Aún no hay registros guardados en la bitácora.")
+  if df.empty or "NumOrden" not in df.columns or "Minutos" not in df.columns:
+    st.info(
+        "Aún no hay registros válidos guardados o el archivo está vacío. Realiza"
+        " un registro nuevo para inicializar la estructura."
+    )
   else:
     col1, col2 = st.columns(2)
     with col1:
-      fechas_disponibles = sorted(df["Fecha"].unique(), reverse=True)
+      fechas_disponibles = sorted(
+          [str(f) for f in df["Fecha"].dropna().unique()], reverse=True
+      )
       fecha_filtro = st.selectbox("Filtrar por Fecha", fechas_disponibles)
     with col2:
-      turnos_disponibles = ["Todos"] + list(df["Turno"].unique())
+      turnos_disponibles = ["Todos"] + list(
+          df["Turno"].dropna().unique().astype(str)
+      )
       turno_filtro = st.selectbox("Filtrar por Turno", turnos_disponibles)
 
-    df_filtrado = df[df["Fecha"] == fecha_filtro]
+    df_filtrado = df[df["Fecha"].astype(str) == str(fecha_filtro)]
     if turno_filtro != "Todos":
-      df_filtrado = df_filtrado[df_filtrado["Turno"] == turno_filtro]
+      df_filtrado = df_filtrado[df_filtrado["Turno"].astype(str) == str(turno_filtro)]
 
     st.markdown("---")
 
@@ -338,6 +360,10 @@ elif menu == "📊 Resumen de Turno" and st.session_state["admin_logueado"]:
       st.warning("No hay registros para los filtros seleccionados.")
     else:
       total_ordenes = len(df_filtrado)
+      # Aseguramos que la columna Minutos sea numérica para evitar errores de cálculo
+      df_filtrado["Minutos"] = pd.to_numeric(
+          df_filtrado["Minutos"], errors="coerce"
+      ).fillna(0)
       tiempo_total = df_filtrado["Minutos"].sum()
       horas_totales = round(tiempo_total / 60, 2)
 
@@ -386,7 +412,6 @@ elif menu == "👥 Gestionar Personal y Áreas" and st.session_state["admin_logu
 
   tab1, tab2 = st.tabs(["🔧 Gestionar Técnicos", "🏭 Gestionar Áreas"])
 
-  # --- TAB 1: TÉCNICOS ---
   with tab1:
     col_add, col_del = st.columns(2)
 
@@ -427,7 +452,6 @@ elif menu == "👥 Gestionar Personal y Áreas" and st.session_state["admin_logu
     st.markdown("#### 📋 Plantilla Actual de Personal")
     st.dataframe(df_tec_current, use_container_width=True)
 
-  # --- TAB 2: ÁREAS ---
   with tab2:
     col_area_add, col_area_del = st.columns(2)
 
