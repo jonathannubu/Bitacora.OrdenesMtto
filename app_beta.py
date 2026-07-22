@@ -519,27 +519,69 @@ elif categoria_usuario == "📊 Visualizador / Gerencia":
         )
         if pass_gerencia.strip() == "avangardmtto22":
           tab_g1, tab_g2 = st.tabs(["Técnicos", "Áreas"])
+
           with tab_g1:
+            st.markdown("#### Gestión de Técnicos")
             df_t = cargar_tecnicos_df()
             st.dataframe(df_t, use_container_width=True)
-            n_tec = st.text_input("Nuevo técnico")
-            p_tec = st.text_input("Contraseña nuevo técnico", type="password")
-            if st.button("Guardar técnico"):
+
+            n_tec = st.text_input("Nombre del técnico")
+            p_tec = st.text_input(
+                "Contraseña del técnico", type="password", key="p_tec_nuevo"
+            )
+            if st.button("Guardar / Actualizar Técnico"):
               ex, msg = agregar_o_actualizar_tecnico(n_tec, p_tec)
               if ex:
                 st.success(msg)
                 st.rerun()
               else:
                 st.error(msg)
+
+            st.markdown("---")
+            tec_a_borrar = st.selectbox(
+                "Selecciona técnico a eliminar",
+                ["Selecciona..."] + list(df_t["Tecnico"]),
+            )
+            if st.button("Eliminar Técnico"):
+              if tec_a_borrar != "Selecciona...":
+                ex, msg = eliminar_tecnico(tec_a_borrar)
+                if ex:
+                  st.success(msg)
+                  st.rerun()
+                else:
+                  st.error(msg)
+              else:
+                st.warning("Selecciona un técnico válido.")
+
           with tab_g2:
-            st.write(cargar_areas())
+            st.markdown("#### Gestión de Áreas / Naves")
+            lista_areas_actuales = cargar_areas()
+            st.write(lista_areas_actuales)
+
             n_area = st.text_input("Nueva Área o Nave")
-            if st.button("Guardar Área"):
+            if st.button("Guardar Nueva Área"):
               ex, msg = agregar_area(n_area)
               if ex:
                 st.success(msg)
                 st.rerun()
               else:
                 st.error(msg)
+
+            st.markdown("---")
+            area_a_borrar = st.selectbox(
+                "Selecciona área a eliminar",
+                ["Selecciona..."] + lista_areas_actuales,
+            )
+            if st.button("Eliminar Área"):
+              if area_a_borrar != "Selecciona...":
+                ex, msg = eliminar_area(area_a_borrar)
+                if ex:
+                  st.success(msg)
+                  st.rerun()
+                else:
+                  st.error(msg)
+              else:
+                st.warning("Selecciona un área válida.")
+
         elif pass_gerencia:
           st.error("Contraseña incorrecta.")
