@@ -33,10 +33,15 @@ def guardar_registro(nuevo_dato):
 
 def cargar_tecnicos_df():
   if os.path.exists(TECNICOS_FILE):
-    df_tec = pd.read_csv(TECNICOS_FILE)
-    # Asegurar que las columnas sean string puro para evitar errores de tipo
-    df_tec["Tecnico"] = df_tec["Tecnico"].astype(str).str.strip()
-    df_tec["Password"] = df_tec["Password"].astype(str).str.strip()
+    # Forzar que dtype=str lea todo estrictamente como texto desde el inicio
+    df_tec = pd.read_csv(TECNICOS_FILE, dtype=str)
+    df_tec["Tecnico"] = df_tec["Tecnico"].fillna("").astype(str).str.strip()
+    df_tec["Password"] = df_tec["Password"].fillna("").astype(str).str.strip()
+
+    # Limpieza preventiva por si quedó algún .0 viejo guardado en el archivo
+    df_tec["Password"] = df_tec["Password"].str.replace(
+        r"\.0$", "", regex=True
+    )
     return df_tec
   else:
     # Técnicos iniciales por defecto con sus contraseñas
@@ -57,8 +62,11 @@ def agregar_o_actualizar_tecnico(nombre, password):
   nombre = str(nombre).strip()
   password = str(password).strip()
 
+  # Limpiar por si el usuario teclea accidentalmente un .0
+  password = password.replace(".0", "")
+
   if not nombre or not password:
-    return False, "El nombre y la contraseña no pueden estar vacíos."
+    return False, "El nombre y la contraseña não pueden estar vacíos."
 
   if nombre in df_tec["Tecnico"].values:
     # Actualizar contraseña si ya existe
@@ -185,12 +193,11 @@ if menu == "Registrar Orden (Técnicos)":
       elif not equipo or not descripcion:
         st.warning("Por favor completa los campos de equipo y descripción.")
       else:
-        # Buscar la contraseña correcta asegurando formato string y sin espacios extra
         match = df_tec_system[df_tec_system["Tecnico"] == str(tecnico).strip()]
 
         if not match.empty:
           pass_correcta = str(match["Password"].values[0]).strip()
-          pass_ingresada = str(password_tecnico).strip()
+          pass_ingresada = str(password_tecnico).strip().replace(".0", "")
 
           if pass_ingresada == pass_correcta:
             nuevo_registro = {
