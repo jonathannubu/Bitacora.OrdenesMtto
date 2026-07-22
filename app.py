@@ -142,26 +142,32 @@ st.set_page_config(
     page_title="Bitácora de Mantenimiento", page_icon="⚙️", layout="wide"
 )
 
-st.title("⚙️ Bitácora Digital de Órdenes de Trabajo")
-
+# Inicializar estados de sesión de forma segura
 if "admin_logueado" not in st.session_state:
   st.session_state["admin_logueado"] = False
+
+st.title("⚙️ Bitácora Digital de Órdenes de Trabajo")
 
 # --- MENÚ LATERAL ---
 st.sidebar.image("https://img.icons8.com/color/96/maintenance.png", width=80)
 st.sidebar.title("Navegación")
 
+# Definir opciones del menú dinámicamente asegurando que el administrador las vea
 opciones_menu = ["Registrar Orden (Técnicos)"]
 if st.session_state["admin_logueado"]:
-  opciones_menu.append("📊 Resumen de Turno")
-  opciones_menu.append("👥 Gestionar Personal y Áreas")
+  opciones_menu.extend(
+      ["📊 Resumen de Turno", "👥 Gestionar Personal y Áreas"]
+  )
 
 menu = st.sidebar.selectbox("Selecciona una sección", opciones_menu)
 st.sidebar.markdown("---")
 
+# Control de Acceso Administrador en el Sidebar
 if not st.session_state["admin_logueado"]:
   with st.sidebar.expander("🔐 Acceso Administrador"):
-    pass_ingresada = st.text_input("Contraseña", type="password")
+    pass_ingresada = st.text_input(
+        "Contraseña Admin", type="password", key="pass_admin_login"
+    )
     if st.button("Iniciar Sesión"):
       if str(pass_ingresada).strip() == "avangardmtto22":
         st.session_state["admin_logueado"] = True
@@ -232,7 +238,6 @@ if menu == "Registrar Orden (Técnicos)":
     )
 
     st.markdown("---")
-    # Sección de validación integrada justo antes del botón de guardar
     st.markdown(
         "🔐 **Validación de Identidad:** Ingresa tu contraseña personal para"
         " autorizar el registro."
@@ -248,7 +253,7 @@ if menu == "Registrar Orden (Técnicos)":
       )
 
     with f_col2:
-      st.write("")  # Espaciador visual vertical
+      st.write("")
       st.write("")
       submitted = st.form_submit_button(
           "Guardar Orden", use_container_width=True
@@ -265,19 +270,14 @@ if menu == "Registrar Orden (Técnicos)":
             " Orden y Descripción)."
         )
       elif not pass_tecnico:
-        st.error(
-            "Por favor ingresa tu contraseña de técnico para guardar el"
-            " registro."
-        )
+        st.error("Por favor ingresa tu contraseña de técnico.")
       else:
-        # Validar contraseña del técnico seleccionado
         match = df_tec_system[df_tec_system["Tecnico"] == tecnico.strip()]
         if not match.empty:
           pass_correcta = str(match["Password"].values[0]).strip()
           pass_ingresada_clean = str(pass_tecnico).strip().replace(".0", "")
 
           if pass_ingresada_clean == pass_correcta:
-            # Cálculo automático de minutos
             dt_recepcion = datetime.combine(datetime.today(), hora_recepcion)
             dt_cierre = datetime.combine(datetime.today(), hora_cierre)
 
@@ -310,10 +310,7 @@ if menu == "Registrar Orden (Técnicos)":
             st.success("¡Orden registrada y validada con éxito!")
             st.rerun()
           else:
-            st.error(
-                "Contraseña incorrecta para el técnico seleccionado. Verifica"
-                " tu clave."
-            )
+            st.error("Contraseña incorrecta para el técnico seleccionado.")
         else:
           st.error("Error al identificar al técnico seleccionado.")
 
