@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import pandas as pd
 import streamlit as st
@@ -20,7 +20,9 @@ COLUMNAS_OFICIALES = [
     "HoraRecepcion",
     "HoraCierre",
     "HoraConformidad",
-    "Minutos",
+    "MinutosEspera",
+    "MinutosTrabajo",
+    "MinutosTotalOT",
     "Descripcion",
 ]
 
@@ -32,6 +34,9 @@ def cargar_datos():
       df = pd.read_csv(DATA_FILE)
       if "Linea" in df.columns and "Area" not in df.columns:
         df = df.rename(columns={"Linea": "Area"})
+      # Compatibilidad con versiones anteriores si faltan columnas nuevas
+      if "Minutos" in df.columns and "MinutosTrabajo" not in df.columns:
+        df = df.rename(columns={"Minutos": "MinutosTrabajo"})
       for col in COLUMNAS_OFICIALES:
         if col not in df.columns:
           df[col] = ""
@@ -283,27 +288,21 @@ if menu == "Registrar Orden (Técnicos)":
       elif not pass_tecnico:
         st.error("Por favor ingresa tu contraseña de técnico.")
       else:
-        # Validar formato simple de horas
+
         def limpiar_hora(texto_hora):
           texto_hora = texto_hora.strip()
           try:
-            # Intenta parsear como HH:MM
             parsed = datetime.strptime(texto_hora, "%H:%M")
             return parsed.strftime("%H:%M"), parsed
           except ValueError:
-            try:
-              # Intenta por si acaso ponen H:MM
-              parsed = datetime.strptime(texto_hora, "%H:%M")
-              return parsed.strftime("%H:%M"), parsed
-            except:
-              return None, None
+            return None, None
 
-        rec_str, dt_rec_obj = limpiar_hora(h_recepcion)
-        cie_str, dt_cie_obj = limpiar_hora(h_cierre)
-        emi_str, _ = limpiar_hora(h_emision)
+        emi_str, dt_emi = limpiar_hora(h_emision)
+        rec_str, dt_rec = limpiar_hora(h_recepcion)
+        cie_str, dt_cie = limpiar_hora(h_cierre)
         con_str, _ = limpiar_hora(h_conformidad)
 
-        if not rec_str or not cie_str or not emi_str or not con_str:
+        if not emi_str or not rec_str or not cie_str or not con_str:
           st.error(
               "Formato de hora incorrecto. Usa el formato de 24 horas (Ej. 08:30"
               " o 14:15)."
@@ -315,20 +314,32 @@ if menu == "Registrar Orden (Técnicos)":
             pass_ingresada_clean = str(pass_tecnico).strip().replace(".0", "")
 
             if pass_ingresada_clean == pass_correcta:
-              # Cálculo automático de minutos basado en Recepción y Cierre
-              dt_recepcion = datetime.combine(datetime.today(), dt_rec_obj.time())
-              dt_cierre = datetime.combine(datetime.today(), dt_cie_obj.time())
+              # Armar fechas completas para cálculo exacto (considerando turnos cruzados de medianoche)
+              base_date = datetime.today()
+              dt_e = datetime.combine(base_date, dt_emi.time())
+              dt_r = datetime.combine(base_date, dt_rec.time())
+              dt_c = datetime.combine(base_date, dt_cie.time())
 
-              if dt_cierre < dt_recepcion:
-                from datetime import timedelta
+              # Ajuste de medianoche si el cierre o recepción ocurren al día siguiente
+              if dt_r < dt_e:
+                dt_r += timedelta(days=1)
+              if dt_c < dt_r:
+                dt_c += timedelta(days=1)
 
-                dt_cierre += timedelta(days=1)
+              # 1. Tiempo de espera/atención (Emisión -> Recepción)
+              min_espera = int((dt_r - dt_e).total_seconds() / 60)
+              if min_espera < 0:
+                min_espera = 0
 
-              diferencia_minutos = int(
-                  (dt_cierre - dt_recepcion).total_seconds() / 60
-              )
-              if diferencia_minutos < 0:
-                diferencia_minutos = 0
+              # 2. Tiempo de trabajo/reparación (Recepción -> Cierre)
+              min_trabajo = int((dt_c - dt_r).total_seconds() / 60)
+              if min_trabajo < 0:
+                min_trabajo = 0
+
+              # 3. Tiempo total de OT (Emisión -> Cierre)
+              min_total = int((dt_c - dt_e).total_seconds() / 60)
+              if min_total < 0:
+                min_total = 0
 
               nuevo_registro = {
                   "Fecha": fecha_actual,
@@ -342,7 +353,9 @@ if menu == "Registrar Orden (Técnicos)":
                   "HoraRecepcion": rec_str,
                   "HoraCierre": cie_str,
                   "HoraConformidad": con_str,
-                  "Minutos": diferencia_minutos,
+                  "MinutosEspera": min_espera,
+                  "MinutosTrabajo": min_trabajo,
+                  "MinutosTotalOT": min_total,
                   "Descripcion": descripcion,
               }
 
@@ -366,7 +379,7 @@ elif menu == "📊 Resumen de Turno":
 
   df = cargar_datos()
 
-  if df.empty or "NumOrden" not in df.columns or "Minutos" not in df.columns:
+  if df.empty or "NumOrden" not in df.columns:
     st.info(
         "Aún no hay registros válidos guardados o el archivo está vacío. Realiza"
         " un registro nuevo para inicializar la estructura."
@@ -394,30 +407,45 @@ elif menu == "📊 Resumen de Turno":
       st.warning("No hay registros para los filtros seleccionados.")
     else:
       total_ordenes = len(df_filtrado)
-      df_filtrado["Minutos"] = pd.to_numeric(
-          df_filtrado["Minutos"], errors="coerce"
-      ).fillna(0)
-      tiempo_total = df_filtrado["Minutos"].sum()
-      horas_totales = round(tiempo_total / 60, 2)
 
-      m1, m2, m3 = st.columns(3)
-      m1.metric(label="Total Órdenes Atendidas", value=total_ordenes)
-      m2.metric(label="Tiempo Total Invertido (Min)", value=f"{tiempo_total} min")
-      m3.metric(
-          label="Tiempo Total Invertido (Horas)", value=f"{horas_totales} hrs"
+      # Normalizar columnas numéricas de tiempo
+      for col_t in ["MinutosEspera", "MinutosTrabajo", "MinutosTotalOT"]:
+        if col_t in df_filtrado.columns:
+          df_filtrado[col_t] = pd.to_numeric(
+              df_filtrado[col_t], errors="coerce"
+          ).fillna(0)
+        else:
+          df_filtrado[col_t] = 0
+
+      t_espera_tot = df_filtrado["MinutosEspera"].sum()
+      t_trabajo_tot = df_filtrado["MinutosTrabajo"].sum()
+      t_total_ot = df_filtrado["MinutosTotalOT"].sum()
+
+      m1, m2, m3, m4 = st.columns(4)
+      m1.metric(label="Total Órdenes", value=total_ordenes)
+      m2.metric(
+          label="Tiempo Espera Acumulado", value=f"{t_espera_tot} min"
       )
+      m3.metric(
+          label="Tiempo Trabajo Acumulado", value=f"{t_trabajo_tot} min"
+      )
+      m4.metric(label="Tiempo Total OTs", value=f"{t_total_ot} min")
 
       st.markdown("### Desglose por Técnico en este Turno")
       resumen_tecnicos = (
           df_filtrado.groupby("Tecnico")
           .agg(
               Ordenes_Atendidas=("NumOrden", "count"),
-              Minutos_Totales=("Minutos", "sum"),
+              Espera_Promedio_Min=("MinutosEspera", "mean"),
+              Trabajo_Total_Min=("MinutosTrabajo", "sum"),
           )
           .reset_index()
       )
-      resumen_tecnicos["Horas_Invertidas"] = round(
-          resumen_tecnicos["Minutos_Totales"] / 60, 2
+      resumen_tecnicos["Espera_Promedio_Min"] = resumen_tecnicos[
+          "Espera_Promedio_Min"
+      ].round(1)
+      resumen_tecnicos["Trabajo_Total_Horas"] = round(
+          resumen_tecnicos["Trabajo_Total_Min"] / 60, 2
       )
       st.dataframe(resumen_tecnicos, use_container_width=True)
 
