@@ -4,10 +4,10 @@ import sqlite3
 import pandas as pd
 import streamlit as st
 
-# Base de datos SQLite unificada
-DB_FILE = "bitacora_avangard.db"
-TECNICOS_FILE = "tecnicos_activos.csv"
-AREAS_FILE = "areas_activas.csv"
+# Archivos exclusivos para la versión de pruebas
+DB_FILE = "bitacora_beta.db"
+TECNICOS_FILE = "tecnicos_beta.csv"
+AREAS_FILE = "areas_beta.csv"
 
 
 # --- CONFIGURACIÓN DE BASE DE DATOS (CERO PÉRDIDA DE DATOS) ---
