@@ -160,9 +160,12 @@ st.set_page_config(
 if "admin_logueado" not in st.session_state:
   st.session_state["admin_logueado"] = False
 
-# Control de estado para mostrar mensaje de éxito persistente tras el rerun
 if "mensaje_exito_ot" not in st.session_state:
   st.session_state["mensaje_exito_ot"] = None
+
+# Inicializar horas predeterminadas en session_state para que no se recalculen erróneamente en cada interacción
+if "hora_inicial_default" not in st.session_state:
+  st.session_state["hora_inicial_default"] = datetime.now().strftime("%H:%M")
 
 st.title("⚙️ Bitácora Digital de Órdenes de Trabajo")
 
@@ -206,12 +209,9 @@ if menu == "Registrar Orden (Técnicos)":
   st.subheader("📝 Registro de Orden de Trabajo")
   st.markdown("Completa los datos de la intervención realizada.")
 
-  # Mostrar alerta visual si se acaba de registrar una orden exitosamente
   if st.session_state["mensaje_exito_ot"]:
     st.success(st.session_state["mensaje_exito_ot"])
-    st.session_state["mensaje_exito_ot"] = (
-        None  # Limpiar para que no se repita al interactuar
-    )
+    st.session_state["mensaje_exito_ot"] = None
 
   df_tec_system = cargar_tecnicos_df()
   lista_tecnicos_activos = ["Selecciona un técnico..."] + list(
@@ -219,7 +219,8 @@ if menu == "Registrar Orden (Técnicos)":
   )
   lista_areas_activas = ["Selecciona un área..."] + cargar_areas()
 
-  hora_actual_str = datetime.now().strftime("%H:%M")
+  # Hora de referencia estable para el formulario actual
+  h_ref = st.session_state["hora_inicial_default"]
 
   with st.form("form_orden"):
     col1, col2 = st.columns(2)
@@ -247,13 +248,13 @@ if menu == "Registrar Orden (Técnicos)":
       )
       t1, t2, t3, t4 = st.columns(4)
       with t1:
-        h_emision = st.text_input("Emisión", value=hora_actual_str)
+        h_emision = st.text_input("Emisión", value=h_ref)
       with t2:
-        h_recepcion = st.text_input("Recepción", value=hora_actual_str)
+        h_recepcion = st.text_input("Recepción", value=h_ref)
       with t3:
-        h_cierre = st.text_input("Cierre", value=hora_actual_str)
+        h_cierre = st.text_input("Cierre", value=h_ref)
       with t4:
-        h_conformidad = st.text_input("Conformidad", value=hora_actual_str)
+        h_conformidad = st.text_input("Conformidad", value=h_ref)
 
     descripcion = st.text_area(
         "Descripción del trabajo realizado",
@@ -366,7 +367,11 @@ if menu == "Registrar Orden (Técnicos)":
 
               guardar_registro(nuevo_registro)
 
-              # Guardar mensaje de éxito detallado en session state para mostrarlo limpio
+              # Actualizar la hora base para la siguiente orden limpia
+              st.session_state["hora_inicial_default"] = datetime.now().strftime(
+                  "%H:%M"
+              )
+
               st.session_state["mensaje_exito_ot"] = (
                   f"✅ ¡Orden {num_orden} guardada exitosamente! "
                   f"(T. Espera: {min_espera} min | T. Trabajo: {min_trabajo} min | Total: {min_total} min)"
@@ -382,7 +387,7 @@ if menu == "Registrar Orden (Técnicos)":
 
 
 # ---------------------------------------------------------
-# VISTA 2: RESUMEN DE TURNO (Con Búsqueda y Top Equipos por Área)
+# VISTA 2: RESUMEN DE TURNO
 # ---------------------------------------------------------
 elif menu == "📊 Resumen de Turno":
   st.subheader("📊 Resumen y Cierre de Turno")
@@ -460,7 +465,6 @@ elif menu == "📊 Resumen de Turno":
       )
       m4.metric(label="Tiempo Total OTs", value=f"{t_total_ot} min")
 
-      # --- TOP EQUIPOS CRÍTICOS (Agrupando por Área y Equipo de forma separada) ---
       col_sec1, col_sec2 = st.columns(2)
 
       with col_sec1:
