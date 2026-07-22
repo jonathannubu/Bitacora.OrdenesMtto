@@ -20,6 +20,7 @@ def inicializar_bd():
             Fecha TEXT,
             Turno TEXT,
             Tecnico TEXT,
+            Departamento TEXT,
             Area TEXT,
             Equipo TEXT,
             NumOrden TEXT,
@@ -55,15 +56,16 @@ def guardar_nueva_solicitud(datos):
   cursor = conn.cursor()
   cursor.execute(
       """
-        INSERT INTO ordenes (Fecha, Turno, Tecnico, Area, Equipo, NumOrden, TipoMantenimiento, 
+        INSERT INTO ordenes (Fecha, Turno, Tecnico, Departamento, Area, Equipo, NumOrden, TipoMantenimiento, 
                              HoraEmision, HoraRecepcion, HoraCierre, HoraConformidad, 
                              MinutosEspera, MinutosTrabajo, MinutosTotalOT, Descripcion, Estado)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """,
       (
           datos["Fecha"],
           datos["Turno"],
           datos["Tecnico"],
+          datos["Departamento"],
           datos["Area"],
           datos["Equipo"],
           datos["NumOrden"],
@@ -279,20 +281,23 @@ if categoria_usuario == "📝 Solicitante (Producción)":
       "Calidad",
       "EHS",
   ]
+  lista_areas = ["Selecciona un área..."] + cargar_areas()
 
   with st.form("form_solicitud_produccion"):
     col1, col2 = st.columns(2)
     with col1:
-      area_sol = st.selectbox("Departamento que solicita", lista_departamentos)
+      depto_sol = st.selectbox("Departamento que solicita", lista_departamentos)
+      area_sol = st.selectbox("Área (configurada por admin)", lista_areas)
+    with col2:
       equipo_sol = st.text_input(
           "Equipo o Máquina", placeholder="Ej. Línea 2 - Envasadora"
       )
-    with col2:
       turno_sol = st.selectbox(
           "Turno Actual", ["Matutino", "Vespertino", "Nocturno"]
       )
-      num_ot_generado = f"OT-{datetime.now().strftime('%d%H%M%S')}"
-      st.info(f"📌 Folio Asignado Automáticamente: **{num_ot_generado}**")
+
+    num_ot_generado = f"OT-{datetime.now().strftime('%d%H%M%S')}"
+    st.info(f"📌 Folio Asignado Automáticamente: **{num_ot_generado}**")
 
     desc_sol = st.text_area(
         "Descripción corta de la falla",
@@ -306,8 +311,10 @@ if categoria_usuario == "📝 Solicitante (Producción)":
     )
 
     if submitted_sol:
-      if area_sol == "Selecciona un departamento...":
-        st.error("Selecciona el departamento correspondiente.")
+      if depto_sol == "Selecciona un departamento...":
+        st.error("Selecciona el departamento que solicita.")
+      elif area_sol == "Selecciona un área...":
+        st.error("Selecciona el área correspondiente.")
       elif not equipo_sol or not desc_sol:
         st.warning("Completa el equipo y la descripción de la falla.")
       else:
@@ -315,6 +322,7 @@ if categoria_usuario == "📝 Solicitante (Producción)":
             "Fecha": datetime.now().strftime("%Y-%m-%d"),
             "Turno": turno_sol,
             "Tecnico": "Pendiente de Asignar",
+            "Departamento": depto_sol,
             "Area": area_sol,
             "Equipo": equipo_sol,
             "NumOrden": num_ot_generado,
@@ -363,8 +371,8 @@ elif categoria_usuario == "👷‍♂️ Técnico de Mantenimiento":
 
     for index, row in df_pendientes.iterrows():
       with st.expander(
-          f"🔔 [{row['NumOrden']}] Departamento: {row['Area']} | Equipo:"
-          f" {row['Equipo']}"
+          f"🔔 [{row['NumOrden']}] Depto: {row.get('Departamento', 'N/D')} | Área:"
+          f" {row['Area']} | Equipo: {row['Equipo']}"
       ):
         st.write(f"**Descripción del solicitante:** {row['Descripcion']}")
         st.write(
@@ -552,11 +560,16 @@ elif categoria_usuario == "📊 Visualizador / Gerencia":
       for index, row in df_f.iterrows():
         estado_con_actual = row["HoraConformidad"]
         ya_conforme = estado_con_actual != "--:--"
+        depto_txt = (
+            row["Departamento"]
+            if "Departamento" in row and pd.notna(row["Departamento"])
+            else "N/D"
+        )
 
         with st.expander(
-            f"[{row['NumOrden']}] Depto: {row['Area']} | Equipo:"
-            f" {row['Equipo']} | Estado: {row['Estado']} | Conformidad:"
-            f" {('✅ ' + estado_con_actual) if ya_conforme else '⏳ Pendiente'}"
+            f"[{row['NumOrden']}] Depto: {depto_txt} | Área: {row['Area']} |"
+            f" Equipo: {row['Equipo']} | Estado: {row['Estado']} |"
+            f" Conformidad: {('✅ ' + estado_con_actual) if ya_conforme else '⏳ Pendiente'}"
         ):
           st.write(f"**Técnico:** {row['Tecnico']}")
           st.write(f"**Tipo de Mantenimiento:** {row['TipoMantenimiento']}")
