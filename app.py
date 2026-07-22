@@ -31,34 +31,52 @@ def guardar_registro(nuevo_dato):
   df.to_csv(DATA_FILE, index=False)
 
 
-def cargar_tecnicos():
+def cargar_tecnicos_df():
   if os.path.exists(TECNICOS_FILE):
-    df_tec = pd.read_csv(TECNICOS_FILE)
-    return df_tec["Tecnico"].tolist()
+    return pd.read_csv(TECNICOS_FILE)
   else:
-    # Técnicos iniciales por defecto si no existe el archivo
-    iniciales = ["Técnico 1", "Técnico 2", "Especialista en Automatización"]
-    df_tec = pd.DataFrame({"Tecnico": iniciales})
+    # Técnicos iniciales por defecto con sus contraseñas
+    df_tec = pd.DataFrame({
+        "Tecnico": [
+            "Técnico 1",
+            "Técnico 2",
+            "Especialista en Automatización",
+        ],
+        "Password": ["1234", "5678", "9999"],
+    })
     df_tec.to_csv(TECNICOS_FILE, index=False)
-    return iniciales
+    return df_tec
 
 
-def agregar_tecnico(nuevo_nombre):
-  lista = cargar_tecnicos()
-  if nuevo_nombre not in lista and nuevo_nombre.strip() != "":
-    lista.append(nuevo_nombre.strip())
-    pd.DataFrame({"Tecnico": lista}).to_csv(TECNICOS_FILE, index=False)
-    return True
-  return False
+def agregar_o_actualizar_tecnico(nombre, password):
+  df_tec = cargar_tecnicos_df()
+  nombre = nombre.strip()
+  password = password.strip()
+
+  if not nombre or not password:
+    return False, "El nombre y la contraseña no pueden estar vacíos."
+
+  if nombre in df_tec["Tecnico"].values:
+    # Actualizar contraseña si ya existe
+    df_tec.loc[df_tec["Tecnico"] == nombre, "Password"] = password
+    mensaje = f"Contraseña actualizada para {nombre}."
+  else:
+    # Agregar nuevo
+    nuevo_row = pd.DataFrame({"Tecnico": [nombre], "Password": [password]})
+    df_tec = pd.concat([df_tec, nuevo_row], ignore_index=True)
+    mensaje = f"Técnico {nombre} agregado exitosamente."
+
+  df_tec.to_csv(TECNICOS_FILE, index=False)
+  return True, mensaje
 
 
 def eliminar_tecnico(nombre_a_borrar):
-  lista = cargar_tecnicos()
-  if nombre_a_borrar in lista:
-    lista.remove(nombre_a_borrar)
-    pd.DataFrame({"Tecnico": lista}).to_csv(TECNICOS_FILE, index=False)
-    return True
-  return False
+  df_tec = cargar_tecnicos_df()
+  if len(df_tec) <= 1:
+    return False, "Debes mantener al menos un técnico registrado."
+  df_tec = df_tec[df_tec["Tecnico"] != nombre_a_borrar]
+  df_tec.to_csv(TECNICOS_FILE, index=False)
+  return True, "Técnico eliminado correctamente."
 
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
@@ -73,15 +91,11 @@ if "admin_logueado" not in st.session_state:
   st.session_state["admin_logueado"] = False
 
 # --- MENÚ LATERAL ---
-st.sidebar.image(
-    "https://img.icons8.com/color/96/maintenance.png", width=80
-)  # Ícono decorativo
+st.sidebar.image("https://img.icons8.com/color/96/maintenance.png", width=80)
 st.sidebar.title("Navegación")
 
-# Opciones base para cualquier usuario
 opciones_menu = ["Registrar Orden (Técnicos)"]
 
-# Si el admin está logueado, agregamos sus opciones exclusivas
 if st.session_state["admin_logueado"]:
   opciones_menu.append("📊 Resumen de Turno")
   opciones_menu.append("👥 Gestionar Técnicos")
@@ -90,7 +104,7 @@ menu = st.sidebar.selectbox("Selecciona una sección", opciones_menu)
 
 st.sidebar.markdown("---")
 
-# --- CONTROL DE ACCESO DE ADMINISTRADOR EN EL SIDEBAR ---
+# --- CONTROL DE ACCESO DE ADMINISTRADOR ---
 if not st.session_state["admin_logueado"]:
   with st.sidebar.expander("🔐 Acceso Administrador"):
     pass_ingresada = st.text_input("Contraseña", type="password")
@@ -111,29 +125,38 @@ st.sidebar.markdown("---")
 
 
 # ---------------------------------------------------------
-# VISTA 1: REGISTRO DE ÓRDENES (Para técnicos desde cualquier cel)
+# VISTA 1: REGISTRO DE ÓRDENES (Con validación de contraseña de técnico)
 # ---------------------------------------------------------
 if menu == "Registrar Orden (Técnicos)":
   st.subheader("📝 Registro de Orden Atendida")
   st.markdown(
-      "Selecciona tu nombre, indica el equipo y detalla el servicio realizado."
+      "Selecciona tu nombre, ingresa tu contraseña asignada, detalla el"
+      " servicio y guarda."
   )
 
-  lista_tecnicos_activos = ["Selecciona un técnico..."] + cargar_tecnicos()
+  df_tec_system = cargar_tecnicos_df()
+  lista_tecnicos_activos = ["Selecciona un técnico..."] + list(
+      df_tec_system["Tecnico"]
+  )
 
   with st.form("form_orden", clear_on_submit=True):
     col1, col2 = st.columns(2)
 
     with col1:
       tecnico = st.selectbox("Técnico responsable", lista_tecnicos_activos)
+      password_tecnico = st.text_input(
+          "Contraseña de técnico",
+          type="password",
+          placeholder="Tu clave personal",
+      )
       turno = st.selectbox(
           "Turno", ["Matutino", "Vespertino", "Nocturno", "Mixto"]
       )
+
+    with col2:
       equipo = st.text_input(
           "Equipo / Máquina / Línea", placeholder="Ej. Línea de Envasado 2"
       )
-
-    with col2:
       minutos = st.number_input(
           "Tiempo invertido (minutos)", min_value=1, max_value=720, value=30
       )
@@ -153,24 +176,32 @@ if menu == "Registrar Orden (Técnicos)":
     if submitted:
       if tecnico == "Selecciona un técnico...":
         st.error("Por favor selecciona tu nombre de la lista.")
+      elif not password_tecnico:
+        st.error("Debes ingresar tu contraseña de técnico para guardar.")
       elif not equipo or not descripcion:
-        st.warning(
-            "Por favor completa los campos de equipo y descripción del"
-            " trabajo."
-        )
+        st.warning("Por favor completa los campos de equipo y descripción.")
       else:
-        nuevo_registro = {
-            "Fecha": fecha_actual,
-            "Turno": turno,
-            "Tecnico": tecnico,
-            "Equipo": equipo,
-            "Descripcion": descripcion,
-            "Minutos": minutos,
-        }
-        guardar_registro(nuevo_registro)
-        st.success(
-            "¡Orden registrada con éxito! Ya quedó guardada en el sistema."
-        )
+        # Validar contraseña del técnico
+        pass_correcta = df_tec_system.loc[
+            df_tec_system["Tecnico"] == tecnico, "Password"
+        ].values[0]
+
+        if str(password_tecnico).strip() == str(pass_correcta).strip():
+          nuevo_registro = {
+              "Fecha": fecha_actual,
+              "Turno": turno,
+              "Tecnico": tecnico,
+              "Equipo": equipo,
+              "Descripcion": descripcion,
+              "Minutos": minutos,
+          }
+          guardar_registro(nuevo_registro)
+          st.success("¡Orden registrada y validada con éxito!")
+        else:
+          st.error(
+              "Contraseña de técnico incorrecta. Verifica tu clave o contacta al"
+              " administrador."
+          )
 
 
 # ---------------------------------------------------------
@@ -237,48 +268,50 @@ elif menu == "📊 Resumen de Turno" and st.session_state["admin_logueado"]:
 
 
 # ---------------------------------------------------------
-# VISTA 3: GESTIÓN DE TÉCNICOS (Exclusivo Administrador)
+# VISTA 3: GESTIÓN DE TÉCNICOS (Exclusivo Administrador con Contraseñas)
 # ---------------------------------------------------------
 elif menu == "👥 Gestionar Técnicos" and st.session_state["admin_logueado"]:
-  st.subheader("👥 Administración de Personal Técnico")
+  st.subheader("👥 Administración de Personal Técnico y Claves")
   st.markdown(
-      "Agrega nuevos técnicos o da de baja a personal sin necesidad de tocar"
-      " código."
+      "Asigna o cambia la contraseña personal de cada técnico para sus"
+      " registros."
   )
 
   col_add, col_del = st.columns(2)
 
   with col_add:
-    st.markdown("#### ➕ Agregar Nuevo Técnico")
-    nuevo_nombre_tec = st.text_input(
-        "Nombre completo del técnico", placeholder="Ej. Carlos Mendoza"
+    st.markdown("#### ➕ Registrar o Actualizar Técnico")
+    nombre_tec = st.text_input(
+        "Nombre del técnico", placeholder="Ej. Carlos Mendoza"
     )
-    if st.button("Registrar Técnico"):
-      if agregar_tecnico(nuevo_nombre_tec):
-        st.success(
-            f"¡Técnico '{nuevo_nombre_tec}' agregado a la lista exitosamente!"
-        )
+    pass_tec = st.text_input(
+        "Contraseña asignada",
+        type="password",
+        placeholder="Clave de 4 dígitos o texto",
+    )
+    if st.button("Guardar Técnico"):
+      exito, msg = agregar_o_actualizar_tecnico(nombre_tec, pass_tec)
+      if exito:
+        st.success(msg)
         st.rerun()
       else:
-        st.warning(
-            "Escribe un nombre válido o el técnico ya existe en la lista."
-        )
+        st.error(msg)
 
   with col_del:
     st.markdown("#### 🗑️ Eliminar Técnico")
-    tecnicos_actuales = cargar_tecnicos()
+    df_tec_current = cargar_tecnicos_df()
     tec_a_borrar = st.selectbox(
-        "Selecciona el técnico a remover", tecnicos_actuales
+        "Selecciona el técnico a remover", df_tec_current["Tecnico"]
     )
     if st.button("Eliminar de la lista"):
-      if len(tecnicos_actuales) > 1:
-        eliminar_tecnico(tec_a_borrar)
-        st.success(f"Técnico '{tec_a_borrar}' eliminado correctamente.")
+      exito, msg = eliminar_tecnico(tec_a_borrar)
+      if exito:
+        st.success(msg)
         st.rerun()
       else:
-        st.error("Debes mantener al menos un técnico registrado.")
+        st.error(msg)
 
   st.markdown("---")
-  st.markdown("#### 📋 Plantilla Actual de Técnicos Registrados")
-  df_tec_view = pd.DataFrame({"Nombre del Técnico": cargar_tecnicos()})
-  st.dataframe(df_tec_view, use_container_width=True)
+  st.markdown("#### 📋 Plantilla Actual de Personal (Vista Admin)")
+  # Mostramos la tabla oculta de contraseñas para que tú como admin puedas consultarlas si algún técnico la olvida
+  st.dataframe(df_tec_current, use_container_width=True)
