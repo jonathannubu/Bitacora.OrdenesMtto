@@ -697,24 +697,27 @@ else:
             f"📝 Solicitar Orden de Mantenimiento - Departamento: {depto_actual}"
         )
         st.markdown(
-            "Reporta una falla o necesidad de ajuste directamente al área de"
-            " mantenimiento."
+            "Reporta una falla o necesidad de ajuste directamente al área de mantenimiento."
         )
 
         lista_areas = ["Selecciona un área / línea..."] + cargar_areas()
 
-        with st.form("form_solicitud_produccion"):
-            area_sol = st.selectbox("Área / Línea", lista_areas)
-            
-            # Cargar equipos dinámicamente según el área seleccionada
-            df_eq_disp = cargar_equipos_df()
-            if area_sol != "Selecciona un área / línea...":
-                equipos_filtrados = df_eq_disp[df_eq_disp["Area"] == area_sol]["Equipo"].tolist()
-            else:
-                equipos_filtrados = []
+        # Selección de área fuera del form para actualizar al instante
+        area_sol = st.selectbox("Área / Línea", lista_areas, key="select_area_solicitud")
 
-            lista_equipos_sel = ["Selecciona un equipo..."] + equipos_filtrados
-            equipo_sol = st.selectbox("Equipo o Máquina", lista_equipos_sel)
+        # Cargar equipos dinámicamente según el área seleccionada
+        df_eq_disp = cargar_equipos_df()
+        if area_sol != "Selecciona un área / línea..." and not df_eq_disp.empty:
+            equipos_filtrados = df_eq_disp[df_eq_disp["Area"].str.strip() == area_sol.strip()]["Equipo"].tolist()
+        else:
+            equipos_filtrados = []
+
+        with st.form("form_solicitud_produccion"):
+            if equipos_filtrados:
+                equipo_sol = st.selectbox("Equipo o Máquina", ["Selecciona un equipo..."] + equipos_filtrados)
+            else:
+                st.warning("⚠️ Esta área no tiene equipos registrados o debes seleccionar un área válida.")
+                equipo_sol = "Selecciona un equipo..."
 
             turno_sol = st.selectbox(
                 "Turno Actual", ["Matutino", "Vespertino", "Nocturno"]
@@ -1298,7 +1301,6 @@ else:
                         st.warning("Ingresa el nombre del equipo.")
                     else:
                         nombre_limpio = nuevo_equipo_nombre.strip()
-                        # Validar si ya existe exactamente el mismo equipo en esa área
                         existente = not df_eq_admin[
                             (df_eq_admin["Area"] == eq_area_sel) & 
                             (df_eq_admin["Equipo"].str.lower() == nombre_limpio.lower())
@@ -1323,7 +1325,6 @@ else:
 
             if not df_eq_admin.empty:
                 st.markdown("#### Eliminar Equipo / Máquina")
-                # Crear opciones combinadas para identificar fácil qué borrar
                 opciones_borrar = [
                     f"{row['Area']} ➔ {row['Equipo']}" for _, row in df_eq_admin.iterrows()
                 ]
