@@ -533,6 +533,10 @@ else:
         "Atiende solicitudes nuevas o gestiona aquellas en espera asignadas a"
         " ti o disponibles en general."
     )
+    st.markdown(
+        "💡 **Código de colores:** 🔴 **Rojo** (Abiertas / Sin técnico"
+        " asignado), 🔵 **Azul** (En espera / Pausadas)."
+    )
 
     if st.session_state["mensaje_alerta"]:
       st.success(st.session_state["mensaje_alerta"])
@@ -553,171 +557,202 @@ else:
         es_mio = tec_en_bd == tec_actual
         esta_libre = tec_en_bd == "Pendiente de Asignar"
 
-        etiqueta_exp = (
-            f"🔔 [{row['NumOrden']}] Depto: {row.get('Departamento', 'N/D')} |"
-            f" Área: {row['Area']} | Equipo: {row['Equipo']} | Estado:"
-            f" **{estado_actual_ot}**"
-        )
+        # Definir color de contenedor según estatus y si requiere técnico
+        if estado_actual_ot == "Abierta" or esta_libre:
+          # ROJO / ROSA CLARO: Abiertas o sin técnico
+          estilo_color = "background-color: #f8d7da; padding: 15px; border-radius: 8px; border-left: 6px solid #dc3545; margin-bottom: 15px;"
+          badge_estado = (
+              "🔴 **[ESTADO: ABIERTA / SIN TÉCNICO ASIGNADO]**"
+          )
+        elif estado_actual_ot == "En Espera":
+          # AZUL CLARO: En espera (refacción o externo)
+          estilo_color = "background-color: #cce5ff; padding: 15px; border-radius: 8px; border-left: 6px solid #004085; margin-bottom: 15px;"
+          badge_estado = "🔵 **[ESTADO: EN ESPERA / PAUSADA]**"
+        else:
+          estilo_color = "background-color: #f1f3f5; padding: 15px; border-radius: 8px; border-left: 6px solid #6c757d; margin-bottom: 15px;"
+          badge_estado = f"⚪ **[ESTADO: {estado_actual_ot}]**"
 
-        with st.expander(etiqueta_exp):
-          st.write(f"**Descripción:** {row['Descripcion']}")
-          st.write(f"**Técnico Asignado:** {tec_en_bd}")
+        # Contenedor visual coloreado
+        with st.container():
+          st.markdown(
+              f"""
+                    <div style="{estilo_color}">
+                        <h4>[{row['NumOrden']}] Área: {row['Area']} | Equipo: {row['Equipo']}</h4>
+                        <p>{badge_estado} | <b>Depto:</b> {row.get('Departamento', 'N/D')} | <b>Técnico:</b> {tec_en_bd}</p>
+                        <p><b>Descripción:</b> {row['Descripcion']}</p>
+                    </div>
+                    """,
+              unsafe_allow_html=True,
+          )
 
-          if esta_libre:
-            if st.button(
-                "Tomar esta Orden y Atender", key=f"tomar_{ot_id}"
-            ):
-              datos_toma = {
-                  "Tecnico": tec_actual,
-                  "TipoMantenimiento": row["TipoMantenimiento"],
-                  "HoraRecepcion": (
-                      row["HoraEmision"]
-                      if row["HoraEmision"] != "--:--"
-                      else datetime.now().strftime("%H:%M")
-                  ),
-                  "HoraCierre": row["HoraCierre"],
-                  "HoraConformidad": row["HoraConformidad"],
-                  "MinutosEspera": row["MinutosEspera"],
-                  "MinutosTrabajo": row["MinutosTrabajo"],
-                  "MinutosTotalOT": row["MinutosTotalOT"],
-                  "Descripcion": row["Descripcion"],
-                  "Estado": row["Estado"],
-              }
-              actualizar_orden_db(ot_id, datos_toma)
-              st.success("✅ ¡Orden tomada con éxito!")
-              st.rerun()
-
-          elif es_mio or estado_actual_ot == "En Espera":
-            with st.form(f"form_cierre_{ot_id}"):
-              col_t1, col_t2 = st.columns(2)
-              with col_t1:
-                clasificacion_trabajo = st.selectbox(
-                    "Clasificación de Trabajo",
-                    [
-                        "Correctivo",
-                        "Ajuste",
-                        "Configuracion de linea",
-                        "Mejora",
-                    ],
-                    key=f"tipo_{ot_id}",
-                )
-              with col_t2:
-                accion_orden = st.selectbox(
-                    "Acción sobre la Orden",
-                    [
-                        "Finalizar y Cerrar Orden",
-                        "Poner en Espera (Falta Refacción)",
-                        "Poner en Espera (Servicio Externo)",
-                        "Liberar Orden (Devolver a Pendientes)",
-                    ],
-                    key=f"accion_{ot_id}",
-                )
-
-              desc_tec = st.text_area(
-                  "Diagnóstico o Notas de Avance",
-                  value=row["Descripcion"],
-                  key=f"desc_{ot_id}",
-              )
-
-              btn_ejecutar = st.form_submit_button(
-                  "Ejecutar Acción", use_container_width=True
-              )
-
-              if btn_ejecutar:
-                if accion_orden == "Liberar Orden (Devolver a Pendientes)":
-                  datos_liberar = {
-                      "Tecnico": "Pendiente de Asignar",
-                      "TipoMantenimiento": row["TipoMantenimiento"],
-                      "HoraRecepcion": row["HoraRecepcion"],
-                      "HoraCierre": row["HoraCierre"],
-                      "HoraConformidad": row["HoraConformidad"],
-                      "MinutosEspera": row["MinutosEspera"],
-                      "MinutosTrabajo": row["MinutosTrabajo"],
-                      "MinutosTotalOT": row["MinutosTotalOT"],
-                      "Descripcion": row["Descripcion"],
-                      "Estado": "Abierta",
-                  }
-                  actualizar_orden_db(ot_id, datos_liberar)
-                  st.success("ℹ️ Orden devuelta a pendientes.")
-                  st.rerun()
-
-                elif "Poner en Espera" in accion_orden:
-                  motivo_espera = (
-                      "EN ESPERA [Falta Refacción]: "
-                      if "Refacción" in accion_orden
-                      else "EN ESPERA [Servicio Externo]: "
-                  )
-                  nota_final_espera = motivo_espera + desc_tec
-                  datos_espera = {
-                      "Tecnico": "Pendiente de Asignar",
-                      "TipoMantenimiento": clasificacion_trabajo,
-                      "HoraRecepcion": (
-                          row["HoraEmision"]
-                          if row["HoraEmision"] != "--:--"
-                          else datetime.now().strftime("%H:%M")
-                      ),
-                      "HoraCierre": "--:--",
-                      "HoraConformidad": "--:--",
-                      "MinutosEspera": 0,
-                      "MinutosTrabajo": 0,
-                      "MinutosTotalOT": 0,
-                      "Descripcion": nota_final_espera,
-                      "Estado": "En Espera",
-                  }
-                  actualizar_orden_db(ot_id, datos_espera)
-                  st.success("⚠️ Orden marcada como En Espera.")
-                  st.rerun()
-
-                elif accion_orden == "Finalizar y Cerrar Orden":
-                  try:
-                    hora_actual_str = datetime.now().strftime("%H:%M")
-                    h_rec = (
+          # Opciones de acción dentro de un expander o directo
+          with st.expander(
+              f"⚙️ Gestionar Orden [{row['NumOrden']}]", expanded=False
+          ):
+            if esta_libre:
+              if st.button(
+                  f"Tomar esta Orden y Atender - {row['NumOrden']}",
+                  key=f"tomar_{ot_id}",
+              ):
+                datos_toma = {
+                    "Tecnico": tec_actual,
+                    "TipoMantenimiento": row["TipoMantenimiento"],
+                    "HoraRecepcion": (
                         row["HoraEmision"]
                         if row["HoraEmision"] != "--:--"
-                        else hora_actual_str
-                    )
-                    h_cie = hora_actual_str
-                    h_con = (
-                        row["HoraConformidad"]
-                        if row["HoraConformidad"] != "--:--"
-                        else "--:--"
-                    )
+                        else datetime.now().strftime("%H:%M")
+                    ),
+                    "HoraCierre": row["HoraCierre"],
+                    "HoraConformidad": row["HoraConformidad"],
+                    "MinutosEspera": row["MinutosEspera"],
+                    "MinutosTrabajo": row["MinutosTrabajo"],
+                    "MinutosTotalOT": row["MinutosTotalOT"],
+                    "Descripcion": row["Descripcion"],
+                    "Estado": row["Estado"],
+                }
+                actualizar_orden_db(ot_id, datos_toma)
+                st.success("✅ ¡Orden tomada con éxito!")
+                st.rerun()
 
-                    dt_emi = datetime.strptime(row["HoraEmision"], "%H:%M")
-                    dt_rec = datetime.strptime(h_rec, "%H:%M")
-                    dt_cie = datetime.strptime(h_cie, "%H:%M")
+            elif es_mio or estado_actual_ot == "En Espera":
+              with st.form(f"form_cierre_{ot_id}"):
+                col_t1, col_t2 = st.columns(2)
+                with col_t1:
+                  clasificacion_trabajo = st.selectbox(
+                      "Clasificación de Trabajo",
+                      [
+                          "Correctivo",
+                          "Ajuste",
+                          "Configuracion de linea",
+                          "Mejora",
+                      ],
+                      key=f"tipo_{ot_id}",
+                  )
+                with col_t2:
+                  accion_orden = st.selectbox(
+                      "Acción sobre la Orden",
+                      [
+                          "Finalizar y Cerrar Orden",
+                          "Poner en Espera (Falta Refacción)",
+                          "Poner en Espera (Servicio Externo)",
+                          "Liberar Orden (Devolver a Pendientes)",
+                      ],
+                      key=f"accion_{ot_id}",
+                  )
 
-                    base_date = datetime.today()
-                    dt_e = datetime.combine(base_date, dt_emi.time())
-                    dt_r = datetime.combine(base_date, dt_rec.time())
-                    dt_c = datetime.combine(base_date, dt_cie.time())
+                desc_tec = st.text_area(
+                    "Diagnóstico o Notas de Avance",
+                    value=row["Descripcion"],
+                    key=f"desc_{ot_id}",
+                )
 
-                    if dt_r < dt_e:
-                      dt_r += timedelta(days=1)
-                    if dt_c < dt_r:
-                      dt_c += timedelta(days=1)
+                btn_ejecutar = st.form_submit_button(
+                    "Ejecutar Acción", use_container_width=True
+                )
 
-                    min_esp = max(0, int((dt_r - dt_e).total_seconds() / 60))
-                    min_trab = max(0, int((dt_c - dt_r).total_seconds() / 60))
-                    min_tot = max(0, int((dt_c - dt_e).total_seconds() / 60))
-
-                    datos_actualizados = {
-                        "Tecnico": tec_actual,
-                        "TipoMantenimiento": clasificacion_trabajo,
-                        "HoraRecepcion": h_rec,
-                        "HoraCierre": h_cie,
-                        "HoraConformidad": h_con,
-                        "MinutosEspera": min_esp,
-                        "MinutosTrabajo": min_trab,
-                        "MinutosTotalOT": min_tot,
-                        "Descripcion": desc_tec,
-                        "Estado": "Cerrada",
+                if btn_ejecutar:
+                  if accion_orden == "Liberar Orden (Devolver a Pendientes)":
+                    datos_liberar = {
+                        "Tecnico": "Pendiente de Asignar",
+                        "TipoMantenimiento": row["TipoMantenimiento"],
+                        "HoraRecepcion": row["HoraRecepcion"],
+                        "HoraCierre": row["HoraCierre"],
+                        "HoraConformidad": row["HoraConformidad"],
+                        "MinutosEspera": row["MinutosEspera"],
+                        "MinutosTrabajo": row["MinutosTrabajo"],
+                        "MinutosTotalOT": row["MinutosTotalOT"],
+                        "Descripcion": row["Descripcion"],
+                        "Estado": "Abierta",
                     }
-                    actualizar_orden_db(ot_id, datos_actualizados)
-                    st.success(f"✅ Orden {row['NumOrden']} cerrada con éxito.")
+                    actualizar_orden_db(ot_id, datos_liberar)
+                    st.success("ℹ️ Orden devuelta a pendientes.")
                     st.rerun()
-                  except ValueError:
-                    st.error("Error al procesar las horas automáticas.")
+
+                  elif "Poner en Espera" in accion_orden:
+                    motivo_espera = (
+                        "EN ESPERA [Falta Refacción]: "
+                        if "Refacción" in accion_orden
+                        else "EN ESPERA [Servicio Externo]: "
+                    )
+                    nota_final_espera = motivo_espera + desc_tec
+                    datos_espera = {
+                        "Tecnico": "Pendiente de Asignar",
+                        "TipoMantenimiento": clasificacion_trabajo,
+                        "HoraRecepcion": (
+                            row["HoraEmision"]
+                            if row["HoraEmision"] != "--:--"
+                            else datetime.now().strftime("%H:%M")
+                        ),
+                        "HoraCierre": "--:--",
+                        "HoraConformidad": "--:--",
+                        "MinutosEspera": 0,
+                        "MinutosTrabajo": 0,
+                        "MinutosTotalOT": 0,
+                        "Descripcion": nota_final_espera,
+                        "Estado": "En Espera",
+                    }
+                    actualizar_orden_db(ot_id, datos_espera)
+                    st.success("⚠️ Orden marcada como En Espera.")
+                    st.rerun()
+
+                  elif accion_orden == "Finalizar y Cerrar Orden":
+                    try:
+                      hora_actual_str = datetime.now().strftime("%H:%M")
+                      h_rec = (
+                          row["HoraEmision"]
+                          if row["HoraEmision"] != "--:--"
+                          else hora_actual_str
+                      )
+                      h_cie = hora_actual_str
+                      h_con = (
+                          row["HoraConformidad"]
+                          if row["HoraConformidad"] != "--:--"
+                          else "--:--"
+                      )
+
+                      dt_emi = datetime.strptime(row["HoraEmision"], "%H:%M")
+                      dt_rec = datetime.strptime(h_rec, "%H:%M")
+                      dt_cie = datetime.strptime(h_cie, "%H:%M")
+
+                      base_date = datetime.today()
+                      dt_e = datetime.combine(base_date, dt_emi.time())
+                      dt_r = datetime.combine(base_date, dt_rec.time())
+                      dt_c = datetime.combine(base_date, dt_cie.time())
+
+                      if dt_r < dt_e:
+                        dt_r += timedelta(days=1)
+                      if dt_c < dt_r:
+                        dt_c += timedelta(days=1)
+
+                      min_esp = max(0, int((dt_r - dt_e).total_seconds() / 60))
+                      min_trab = max(
+                          0, int((dt_c - dt_r).total_seconds() / 60)
+                      )
+                      min_tot = max(
+                          0, int((dt_c - dt_e).total_seconds() / 60)
+                      )
+
+                      datos_actualizados = {
+                          "Tecnico": tec_actual,
+                          "TipoMantenimiento": clasificacion_trabajo,
+                          "HoraRecepcion": h_rec,
+                          "HoraCierre": h_cie,
+                          "HoraConformidad": h_con,
+                          "MinutosEspera": min_esp,
+                          "MinutosTrabajo": min_trab,
+                          "MinutosTotalOT": min_tot,
+                          "Descripcion": desc_tec,
+                          "Estado": "Cerrada",
+                      }
+                      actualizar_orden_db(ot_id, datos_actualizados)
+                      st.success(
+                          f"✅ Orden {row['NumOrden']} cerrada con éxito."
+                      )
+                      st.rerun()
+                    except ValueError:
+                      st.error("Error al procesar las horas automáticas.")
+
+          st.markdown("<br>", unsafe_allow_html=True)
 
   # ---------------------------------------------------------
   # CATEGORÍA 3: VISUALIZADOR
