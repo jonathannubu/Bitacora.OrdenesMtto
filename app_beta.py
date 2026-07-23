@@ -35,23 +35,27 @@ def inicializar_bd():
             MinutosTotalOT INTEGER,
             Descripcion TEXT,
             Estado TEXT,
-            CalificacionServicio INTEGER,
+            EvalEPP TEXT,
+            EvalAreaLimpia TEXT,
+            EvalActitud TEXT,
+            EvalRecomendacion TEXT,
+            EvalCausa TEXT,
             ComentarioCalificacion TEXT
         )
     """)
-  # Compatibilidad con bases de datos existentes si faltan las columnas
-  try:
-    cursor.execute(
-        "ALTER TABLE ordenes ADD COLUMN CalificacionServicio INTEGER"
-    )
-  except sqlite3.OperationalError:
-    pass
-  try:
-    cursor.execute(
-        "ALTER TABLE ordenes ADD COLUMN ComentarioCalificacion TEXT"
-    )
-  except sqlite3.OperationalError:
-    pass
+  # Compatibilidad con bases de datos existentes si faltan las columnas de evaluación
+  for col in [
+      "EvalEPP",
+      "EvalAreaLimpia",
+      "EvalActitud",
+      "EvalRecomendacion",
+      "EvalCausa",
+      "ComentarioCalificacion",
+  ]:
+    try:
+      cursor.execute(f"ALTER TABLE ordenes ADD COLUMN {col} TEXT")
+    except sqlite3.OperationalError:
+      pass
 
   conn.commit()
   conn.close()
@@ -132,15 +136,24 @@ def actualizar_orden_db(id_orden, datos):
 
 
 def actualizar_conformidad_con_evaluacion_db(
-    id_orden, hora_con, calificacion, comentario
+    id_orden, hora_con, evals, comentario
 ):
   conn = sqlite3.connect(DB_FILE)
   cursor = conn.cursor()
   cursor.execute(
       """
-        UPDATE ordenes SET HoraConformidad=?, CalificacionServicio=?, ComentarioCalificacion=? WHERE id=?
+        UPDATE ordenes SET HoraConformidad=?, EvalEPP=?, EvalAreaLimpia=?, EvalActitud=?, EvalRecomendacion=?, EvalCausa=?, ComentarioCalificacion=? WHERE id=?
     """,
-      (hora_con, calificacion, comentario, id_orden),
+      (
+          hora_con,
+          evals["EPP"],
+          evals["AreaLimpia"],
+          evals["Actitud"],
+          evals["Recomendacion"],
+          evals["Causa"],
+          comentario,
+          id_orden,
+      ),
   )
   conn.commit()
   conn.close()
@@ -492,8 +505,8 @@ else:
     df_mis_ordenes = cargar_datos_db(
         "SELECT id, Fecha, Turno, Tecnico, Area, Equipo, NumOrden,"
         " TipoMantenimiento, HoraEmision, HoraCierre, HoraConformidad, Estado,"
-        " Descripcion, CalificacionServicio, ComentarioCalificacion FROM ordenes"
-        " WHERE Departamento = ?",
+        " Descripcion, EvalEPP, EvalAreaLimpia, EvalActitud, EvalRecomendacion,"
+        " EvalCausa, ComentarioCalificacion FROM ordenes WHERE Departamento = ?",
         params=(depto_actual,),
     )
 
@@ -510,7 +523,6 @@ else:
         tiene_vb = h_conf != "--:--" and h_conf != ""
 
         if tiene_vb and fecha_emision != fecha_hoy_str:
-          # Omitir órdenes de días anteriores que ya tienen visto bueno
           continue
         ordenes_a_mostrar.append(row)
 
@@ -521,7 +533,7 @@ else:
           ot_id = row["id"]
           estado_ot = row["Estado"]
           h_conf = str(row["HoraConformidad"])
-          calif_guardada = row.get("CalificacionServicio")
+          eval_epp = row.get("EvalEPP")
 
           if h_conf != "--:--" and h_conf:
             color_badge = "🟢 **[Visto Bueno Otorgado]**"
@@ -545,33 +557,31 @@ else:
             st.write(f"**Hora de Cierre:** {row['HoraCierre']}")
             st.write(f"**Visto Bueno / Conformidad:** {h_conf}")
 
-            if calif_guardada:
-              estrellas = "⭐" * int(calif_guardada)
-              st.write(f"**Calificación del Servicio:** {estrellas}")
-              if row.get("ComentarioCalificacion"):
-                st.write(
-                    f"**Comentarios:** {row.get('ComentarioCalificacion')}"
-                )
+            # Mostrar evaluación guardada si ya existe
+            if eval_epp is not None and str(eval_epp).strip() != "" and str(eval_epp) != "nan":
+              st.markdown("#### 📋 Evaluación del Servicio Registrada")
+              st.write(f"- **Utilizó EPP:** {row.get('EvalEPP')}")
+              st.write(f"- **Entreó el área limpia:** {row.get('EvalAreaLimpia')}")
+              st.write(f"- **Mostró actitud de servicio:** {row.get('EvalActitud')}")
+              st.write(f"- **Recomendó acciones para no ocurrencia:** {row.get('EvalRecomendacion')}")
+              st.write(f"- **Explicó la causa que originó la falla:** {row.get('EvalCausa')}")
+              if row.get("ComentarioCalificacion") and str(row.get("ComentarioCalificacion")) != "nan":
+                st.write(f"- **Comentarios:** {row.get('ComentarioCalificacion')}")
 
             if estado_ot == "Cerrada" and (h_conf == "--:--" or not h_conf):
               with st.form(f"form_conf_{ot_id}"):
-                st.markdown("#### 🌟 Evaluar Servicio y Dar Visto Bueno")
-                calif_sel = st.selectbox(
-                    "Calificación del Servicio de Mantenimiento",
-                    [
-                        5,
-                        4,
-                        3,
-                        2,
-                        1,
-                    ],
-                    format_func=lambda x: "⭐" * x
-                    + f" ({x} - {'Excelente' if x==5 else 'Muy Bueno' if x==4 else 'Regular' if x==3 else 'Malo' if x==2 else 'Muy Malo'})",
-                    key=f"sel_calif_{ot_id}",
-                )
+                st.markdown("#### 🌟 Evaluación del Servicio de Mantenimiento")
+                st.markdown("Valida los siguientes puntos del servicio brindado:")
+                
+                chk_epp = st.checkbox("👷‍♂️ Utilizó equipo de protección personal (EPP)", value=True, key=f"epp_{ot_id}")
+                chk_area = st.checkbox("🧹 Entregó el área limpia y ordenada", value=True, key=f"area_{ot_id}")
+                chk_act = st.checkbox("🤝 Mostró actitud de servicio y profesionalismo", value=True, key=f"act_{ot_id}")
+                chk_rec = st.checkbox("💡 Recomendó acciones para su no ocurrencia", value=True, key=f"rec_{ot_id}")
+                chk_causa = st.checkbox("🔍 Explicó la causa que originó la falla del equipo", value=True, key=f"causa_{ot_id}")
+
                 comentario_ev = st.text_input(
-                    "Comentario opcional sobre el servicio",
-                    placeholder="Ej. Excelente atención y rapidez...",
+                    "Comentarios u observaciones adicionales",
+                    placeholder="Ej. Todo excelente, muy buena atención...",
                     key=f"input_com_{ot_id}",
                 )
 
@@ -582,8 +592,15 @@ else:
 
                 if btn_enviar_conf:
                   hora_actual = datetime.now().strftime("%H:%M")
+                  evals_dict = {
+                      "EPP": "Sí" if chk_epp else "No",
+                      "AreaLimpia": "Sí" if chk_area else "No",
+                      "Actitud": "Sí" if chk_act else "No",
+                      "Recomendacion": "Sí" if chk_rec else "No",
+                      "Causa": "Sí" if chk_causa else "No",
+                  }
                   actualizar_conformidad_con_evaluacion_db(
-                      ot_id, hora_actual, calif_sel, comentario_ev
+                      ot_id, hora_actual, evals_dict, comentario_ev
                   )
                   st.success(
                       "✅ Visto bueno y evaluación registrados correctamente a"
@@ -627,7 +644,6 @@ else:
         es_mio = tec_en_bd == tec_actual
         esta_libre = tec_en_bd == "Pendiente de Asignar"
 
-        # Barra lateral minimalista corregida
         if estado_actual_ot == "En Espera":
           estilo_tarjeta = "border-left: 5px solid #1c83e1; padding-left: 12px; margin-bottom: 12px;"
           badge_estado = "🔵 **En Espera**"
