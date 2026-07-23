@@ -11,13 +11,14 @@ DB_FILE = "bitacora_beta.db"
 TECNICOS_FILE = "tecnicos_beta.csv"
 AREAS_FILE = "areas_beta.csv"
 DEPTOS_FILE = "departamentos_beta.csv"
+EQUIPOS_FILE = "equipos_beta.csv"  # <-- NUEVO: Archivo para catálogo de equipos
 
 
 # --- CONFIGURACIÓN DE BASE DE DATOS (CERO PÉRDIDA DE DATOS) ---
 def inicializar_bd():
   conn = sqlite3.connect(DB_FILE)
   cursor = conn.cursor()
-  
+
   # Tabla principal de órdenes
   cursor.execute("""
         CREATE TABLE IF NOT EXISTS ordenes (
@@ -598,6 +599,46 @@ def eliminar_area(area_a_borrar):
   return False, "El área o línea no existe."
 
 
+# --- NUEVO: Gestión de Equipos / Máquinas ---
+def cargar_equipos():
+  if os.path.exists(EQUIPOS_FILE):
+    df_eq = pd.read_csv(EQUIPOS_FILE, dtype=str)
+    return df_eq["Equipo"].fillna("").astype(str).str.strip().tolist()
+  else:
+    equipos_iniciales = [
+        "Línea 2 - Envasadora",
+        "Banda Transportadora Principal",
+        "Selladora Automática",
+        "Compresor de Aire 1",
+    ]
+    df_eq = pd.DataFrame({"Equipo": equipos_iniciales})
+    df_eq.to_csv(EQUIPOS_FILE, index=False)
+    return equipos_iniciales
+
+
+def agregar_equipo(nuevo_equipo):
+  equipos = cargar_equipos()
+  nuevo_equipo = str(nuevo_equipo).strip()
+  if not nuevo_equipo:
+    return False, "El nombre del equipo no puede estar vacío."
+  if nuevo_equipo in equipos:
+    return False, "Este equipo o máquina ya existe en el catálogo."
+  equipos.append(nuevo_equipo)
+  pd.DataFrame({"Equipo": equipos}).to_csv(EQUIPOS_FILE, index=False)
+  return True, f"Equipo '{nuevo_equipo}' agregado al catálogo."
+
+
+def eliminar_equipo(equipo_a_borrar):
+  equipos = cargar_equipos()
+  if len(equipos) <= 1:
+    return False, "Debes mantener al menos un equipo registrado."
+  if equipo_a_borrar in equipos:
+    equipos.remove(equipo_a_borrar)
+    pd.DataFrame({"Equipo": equipos}).to_csv(EQUIPOS_FILE, index=False)
+    return True, "Equipo eliminado del catálogo."
+  return False, "El equipo no existe."
+
+
 # Inicializar Base de Datos Beta
 inicializar_bd()
 
@@ -734,15 +775,25 @@ else:
     )
 
     lista_areas = ["Selecciona un área / línea..."] + cargar_areas()
+    
+    # Catálogo unificado de equipos para evitar errores de dedo
+    lista_equipos_catalogo = cargar_equipos()
+    opciones_equipo_form = ["Selecciona un equipo o máquina..."] + lista_equipos_catalogo + ["➕ Otro (Especificar manualmente)"]
 
     with st.form("form_solicitud_produccion"):
       area_sol = st.selectbox("Área / Línea", lista_areas)
       turno_sol = st.selectbox(
           "Turno Actual", ["Matutino", "Vespertino", "Nocturno"]
       )
-      equipo_sol = st.text_input(
-          "Equipo o Máquina", placeholder="Ej. Línea 2 - Envasadora"
-      )
+      
+      # Selección unificada de equipo
+      tipo_sel_equipo = st.selectbox("Equipo o Máquina", opciones_equipo_form)
+      
+      equipo_manual = ""
+      if tipo_sel_equipo == "➕ Otro (Especificar manualmente)":
+        equipo_manual = st.text_input(
+            "Especificar nombre del equipo o máquina", placeholder="Ej. Etiquetadora Línea 3"
+        )
 
       # Folio consecutivo automático con prefijo OT- y formato OT-000001
       num_ot_generado = obtener_siguiente_folio()
@@ -760,10 +811,20 @@ else:
       )
 
       if submitted_sol:
+        # Determinar el equipo final seleccionado
+        if tipo_sel_equipo == "➕ Otro (Especificar manualmente)":
+          equipo_final = equipo_manual.strip()
+        else:
+          equipo_final = tipo_sel_equipo
+
         if area_sol == "Selecciona un área / línea...":
           st.error("Selecciona el área o línea correspondiente.")
-        elif not equipo_sol or not desc_sol:
-          st.warning("Completa el equipo y la descripción de la falla.")
+        elif tipo_sel_equipo == "Selecciona un equipo o máquina...":
+          st.warning("Selecciona un equipo o máquina del catálogo.")
+        elif tipo_sel_equipo == "➕ Otro (Especificar manualmente)" and not equipo_final:
+          st.warning("Escribe el nombre del equipo o máquina personalizado.")
+        elif not desc_sol:
+          st.warning("Completa la descripción de la falla.")
         else:
           nueva_ot = {
               "Fecha": datetime.now().strftime("%Y-%m-%d"),
@@ -771,7 +832,7 @@ else:
               "Tecnico": "Pendiente de Asignar",
               "Departamento": depto_actual,
               "Area": area_sol,
-              "Equipo": equipo_sol,
+              "Equipo": equipo_final,
               "NumOrden": num_ot_generado,
               "TipoMantenimiento": "Correctivo",
               "HoraEmision": datetime.now().strftime("%H:%M"),
@@ -1333,14 +1394,15 @@ else:
     st.subheader("🛠️ Panel de Administración del Sistema")
     st.markdown(
         "Gestiona los técnicos autorizados, los departamentos solicitantes,"
-        " las áreas/líneas de planta y el control de registros."
+        " las áreas/líneas de planta, el catálogo de equipos y el control de registros."
     )
 
-    tab_g1, tab_g2, tab_g3, tab_g4 = st.tabs(
+    tab_g1, tab_g2, tab_g3, tab_g5, tab_g4 = st.tabs(
         [
             "👥 Gestión de Técnicos",
             "🏢 Gestión de Departamentos",
             "🏭 Gestión de Áreas / Líneas",
+            "⚙️ Gestión de Equipos",
             "🗑️ Borrado y Control de Órdenes",
         ]
     )
@@ -1451,6 +1513,43 @@ else:
             st.error(msg)
         else:
           st.warning("Selecciona un área o línea válida.")
+
+    with tab_g5:
+      st.markdown("#### ⚙️ Catálogo Oficial de Equipos / Máquinas")
+      lista_equipos_actuales = cargar_equipos()
+
+      df_equipos_view = pd.DataFrame(
+          {"Equipo / Máquina": lista_equipos_actuales}
+      ).reset_index(drop=True)
+      df_equipos_view.index = df_equipos_view.index + 1
+      st.dataframe(df_equipos_view, use_container_width=True)
+
+      st.markdown("---")
+      st.markdown("#### Agregar Nuevo Equipo o Máquina al Catálogo")
+      n_equipo = st.text_input("Nombre del Equipo o Máquina")
+      if st.button("Guardar Nuevo Equipo"):
+        ex, msg = agregar_equipo(n_equipo)
+        if ex:
+          st.success(msg)
+          st.rerun()
+        else:
+          st.error(msg)
+
+      st.markdown("---")
+      st.markdown("#### Eliminar Equipo del Catálogo")
+      equipo_a_borrar = st.selectbox(
+          "Selecciona equipo a eliminar", ["Selecciona..."] + lista_equipos_actuales, key="del_eq_sel"
+      )
+      if st.button("Eliminar Equipo"):
+        if equipo_a_borrar != "Selecciona...":
+          ex, msg = eliminar_equipo(equipo_a_borrar)
+          if ex:
+            st.success(msg)
+            st.rerun()
+          else:
+            st.error(msg)
+        else:
+          st.warning("Selecciona un equipo válido.")
 
     with tab_g4:
       st.markdown("#### 🗑️ Gestión y Borrado de Órdenes de Trabajo")
