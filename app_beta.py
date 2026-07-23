@@ -17,6 +17,8 @@ DEPTOS_FILE = "departamentos_beta.csv"
 def inicializar_bd():
   conn = sqlite3.connect(DB_FILE)
   cursor = conn.cursor()
+  
+  # Tabla principal de órdenes
   cursor.execute("""
         CREATE TABLE IF NOT EXISTS ordenes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -48,6 +50,15 @@ def inicializar_bd():
         )
     """)
 
+  # Tabla para llevar el control del folio consecutivo iniciando en 000001
+  cursor.execute("""
+        CREATE TABLE IF NOT EXISTS contador_folios (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            ultimo_folio INTEGER
+        )
+    """)
+  cursor.execute("INSERT OR IGNORE INTO contador_folios (id, ultimo_folio) VALUES (1, 0)")
+
   columnas_requeridas = [
       ("FechaCierre", "TEXT"),
       ("DescripcionFalla", "TEXT"),
@@ -75,6 +86,18 @@ def inicializar_bd():
 
   conn.commit()
   conn.close()
+
+
+def obtener_siguiente_folio():
+  conn = sqlite3.connect(DB_FILE)
+  cursor = conn.cursor()
+  cursor.execute("SELECT ultimo_folio FROM contador_folios WHERE id = 1")
+  res = cursor.fetchone()
+  siguiente = (res[0] if res else 0) + 1
+  cursor.execute("UPDATE contador_folios SET ultimo_folio = ? WHERE id = 1", (siguiente,))
+  conn.commit()
+  conn.close()
+  return f"OT-{siguiente:06d}"
 
 
 def cargar_datos_db(query="SELECT * FROM ordenes", params=()):
@@ -226,7 +249,7 @@ def generar_pdf_orden(row):
       new_y="TOP",
   )
   pdf.cell(
-      col_w, 6, f"Área / Nave: {row.get('Area', '')}", new_x="LMARGIN", new_y="NEXT"
+      col_w, 6, f"Área / Línea: {row.get('Area', '')}", new_x="LMARGIN", new_y="NEXT"
   )
 
   pdf.cell(
@@ -535,17 +558,17 @@ def eliminar_departamento(nombre_a_borrar):
   return True, "Departamento eliminado correctamente."
 
 
-# Gestión de Áreas
+# Gestión de Áreas / Líneas
 def cargar_areas():
   if os.path.exists(AREAS_FILE):
     df_area = pd.read_csv(AREAS_FILE, dtype=str)
     return df_area["Area"].fillna("").astype(str).str.strip().tolist()
   else:
     areas_iniciales = [
-        "Nave 1 - Envasado",
-        "Nave 2 - Producción",
-        "Nave 3 - Empaque",
-        "Nave 4 - Mantenimiento General",
+        "Línea 1 - Envasado",
+        "Línea 2 - Producción",
+        "Línea 3 - Empaque",
+        "Mantenimiento General",
     ]
     df_area = pd.DataFrame({"Area": areas_iniciales})
     df_area.to_csv(AREAS_FILE, index=False)
@@ -556,23 +579,23 @@ def agregar_area(nueva_area):
   areas = cargar_areas()
   nueva_area = str(nueva_area).strip()
   if not nueva_area:
-    return False, "El nombre del área no puede estar vacío."
+    return False, "El nombre del área o línea no puede estar vacío."
   if nueva_area in areas:
-    return False, "Esta área ya existe."
+    return False, "Esta área o línea ya existe."
   areas.append(nueva_area)
   pd.DataFrame({"Area": areas}).to_csv(AREAS_FILE, index=False)
-  return True, f"Área '{nueva_area}' agregada."
+  return True, f"Área / Línea '{nueva_area}' agregada."
 
 
 def eliminar_area(area_a_borrar):
   areas = cargar_areas()
   if len(areas) <= 1:
-    return False, "Debes mantener al menos un área."
+    return False, "Debes mantener al menos un área o línea."
   if area_a_borrar in areas:
     areas.remove(area_a_borrar)
     pd.DataFrame({"Area": areas}).to_csv(AREAS_FILE, index=False)
-    return True, "Área eliminada."
-  return False, "El área no existe."
+    return True, "Área / Línea eliminada."
+  return False, "El área o línea no existe."
 
 
 # Inicializar Base de Datos Beta
@@ -710,10 +733,10 @@ else:
         " mantenimiento."
     )
 
-    lista_areas = ["Selecciona un área..."] + cargar_areas()
+    lista_areas = ["Selecciona un área / línea..."] + cargar_areas()
 
     with st.form("form_solicitud_produccion"):
-      area_sol = st.selectbox("Área / Nave", lista_areas)
+      area_sol = st.selectbox("Área / Línea", lista_areas)
       turno_sol = st.selectbox(
           "Turno Actual", ["Matutino", "Vespertino", "Nocturno"]
       )
@@ -721,7 +744,8 @@ else:
           "Equipo o Máquina", placeholder="Ej. Línea 2 - Envasadora"
       )
 
-      num_ot_generado = f"OT-{datetime.now().strftime('%d%H%M%S')}"
+      # Folio consecutivo automático con prefijo OT- y formato OT-000001
+      num_ot_generado = obtener_siguiente_folio()
       st.info(f"📌 Folio Asignado Automáticamente: **{num_ot_generado}**")
 
       desc_sol = st.text_area(
@@ -736,8 +760,8 @@ else:
       )
 
       if submitted_sol:
-        if area_sol == "Selecciona un área...":
-          st.error("Selecciona el área correspondiente.")
+        if area_sol == "Selecciona un área / línea...":
+          st.error("Selecciona el área o línea correspondiente.")
         elif not equipo_sol or not desc_sol:
           st.warning("Completa el equipo y la descripción de la falla.")
         else:
@@ -823,7 +847,7 @@ else:
             borde_markdown = f"**Estado:** {estado_ot}"
 
           with st.expander(
-              f"[{row['NumOrden']}] Área: {row['Area']} | Equipo:"
+              f"[{row['NumOrden']}] Área/Línea: {row['Area']} | Equipo:"
               f" {row['Equipo']} | {color_badge}"
           ):
             st.markdown(borde_markdown)
@@ -986,7 +1010,7 @@ else:
           st.markdown(
               f"""
                     <div style="{estilo_tarjeta}">
-                        <p style="margin-bottom: 4px;"><b>[{row['NumOrden']}]</b> &nbsp;|&nbsp; Área: <b>{row['Area']}</b> &nbsp;|&nbsp; Equipo: <b>{row['Equipo']}</b> &nbsp;|&nbsp; {badge_estado}</p>
+                        <p style="margin-bottom: 4px;"><b>[{row['NumOrden']}]</b> &nbsp;|&nbsp; Área/Línea: <b>{row['Area']}</b> &nbsp;|&nbsp; Equipo: <b>{row['Equipo']}</b> &nbsp;|&nbsp; {badge_estado}</p>
                         <p style="margin-bottom: 4px; color: #555;"><b>Depto:</b> {row.get('Departamento', 'N/D')} &nbsp;|&nbsp; <b>Técnico:</b> {tec_en_bd}</p>
                         <p style="margin-bottom: 0;"><b>Descripción de la Falla:</b> {desc_falla_txt}</p>
                     </div>
@@ -1285,7 +1309,7 @@ else:
             trabajo_txt = "Pendiente"
 
           with st.expander(
-              f"[{row['NumOrden']}] Área: {row['Area']} | Equipo:"
+              f"[{row['NumOrden']}] Área/Línea: {row['Area']} | Equipo:"
               f" {row['Equipo']} | Estado: {row['Estado']}"
           ):
             st.write(f"**Departamento:** {row.get('Departamento', 'N/D')}")
@@ -1309,14 +1333,14 @@ else:
     st.subheader("🛠️ Panel de Administración del Sistema")
     st.markdown(
         "Gestiona los técnicos autorizados, los departamentos solicitantes,"
-        " las áreas de planta y el control de registros."
+        " las áreas/líneas de planta y el control de registros."
     )
 
     tab_g1, tab_g2, tab_g3, tab_g4 = st.tabs(
         [
             "👥 Gestión de Técnicos",
             "🏢 Gestión de Departamentos",
-            "🏭 Gestión de Áreas",
+            "🏭 Gestión de Áreas / Líneas",
             "🗑️ Borrado y Control de Órdenes",
         ]
     )
@@ -1392,19 +1416,19 @@ else:
           st.warning("Selecciona un departamento válido.")
 
     with tab_g3:
-      st.markdown("#### Áreas / Naves Registradas")
+      st.markdown("#### Áreas / Líneas Registradas")
       lista_areas_actuales = cargar_areas()
 
       df_areas_view = pd.DataFrame(
-          {"Área / Nave": lista_areas_actuales}
+          {"Área / Línea": lista_areas_actuales}
       ).reset_index(drop=True)
       df_areas_view.index = df_areas_view.index + 1
       st.dataframe(df_areas_view, use_container_width=True)
 
       st.markdown("---")
-      st.markdown("#### Agregar Nueva Área")
-      n_area = st.text_input("Nombre de la Nueva Área o Nave")
-      if st.button("Guardar Nueva Área"):
+      st.markdown("#### Agregar Nueva Área o Línea")
+      n_area = st.text_input("Nombre de la Nueva Área o Línea")
+      if st.button("Guardar Nueva Área / Línea"):
         ex, msg = agregar_area(n_area)
         if ex:
           st.success(msg)
@@ -1413,11 +1437,11 @@ else:
           st.error(msg)
 
       st.markdown("---")
-      st.markdown("#### Eliminar Área")
+      st.markdown("#### Eliminar Área / Línea")
       area_a_borrar = st.selectbox(
-          "Selecciona área a eliminar", ["Selecciona..."] + lista_areas_actuales
+          "Selecciona área o línea a eliminar", ["Selecciona..."] + lista_areas_actuales
       )
-      if st.button("Eliminar Área"):
+      if st.button("Eliminar Área / Línea"):
         if area_a_borrar != "Selecciona...":
           ex, msg = eliminar_area(area_a_borrar)
           if ex:
@@ -1426,7 +1450,7 @@ else:
           else:
             st.error(msg)
         else:
-          st.warning("Selecciona un área válida.")
+          st.warning("Selecciona un área o línea válida.")
 
     with tab_g4:
       st.markdown("#### 🗑️ Gestión y Borrado de Órdenes de Trabajo")
@@ -1443,9 +1467,8 @@ else:
       if df_todas_ots.empty:
         st.info("No hay órdenes registradas en el sistema.")
       else:
-        # Crear opciones formateadas para el selectbox
         opciones_ots = {
-            f"[{row['NumOrden']}] Fecha: {row['Fecha']} | Área: {row['Area']} | Equipo: {row['Equipo']} ({row['Estado']})": row[
+            f"[{row['NumOrden']}] Fecha: {row['Fecha']} | Área/Línea: {row['Area']} | Equipo: {row['Equipo']} ({row['Estado']})": row[
                 "id"
             ]
             for index, row in df_todas_ots.iterrows()
@@ -1464,7 +1487,6 @@ else:
               " esta orden de trabajo de la base de datos."
           )
 
-          # Casilla de confirmación adicional para evitar borrados accidentales
           confirmar_borrado = st.checkbox(
               "Confirmo que deseo eliminar definitivamente este registro"
           )
