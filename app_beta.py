@@ -486,7 +486,6 @@ else:
         estado_ot = row["Estado"]
         h_conf = str(row["HoraConformidad"])
 
-        # Marcado con colores según el estatus y visto bueno
         if h_conf != "--:--" and h_conf:
           color_badge = "🟢 **[Visto Bueno Otorgado]**"
           borde_markdown = (
@@ -509,7 +508,6 @@ else:
           st.write(f"**Hora de Cierre:** {row['HoraCierre']}")
           st.write(f"**Visto Bueno / Conformidad:** {h_conf}")
 
-          # Si la orden está cerrada y aún no tiene conformidad, mostrar botón para dar Visto Bueno
           if estado_ot == "Cerrada" and (h_conf == "--:--" or not h_conf):
             if st.button(
                 f"Dar Visto Bueno (Conformidad) - {row['NumOrden']}",
@@ -828,8 +826,46 @@ else:
         )
 
         st.markdown("---")
-        st.markdown("### 📋 Detalle de Órdenes")
-        st.dataframe(df_f, use_container_width=True)
+        st.markdown("### 📋 Detalle de Órdenes (Informativo)")
+        st.markdown(
+            "A continuación se enlistan las órdenes filtradas. Las que se"
+            " encuentran **Abiertas** se muestran a título informativo para"
+            " supervisión de pendientes:"
+        )
+
+        # Función para aplicar estilos condicionales y marcar con colores en el visualizador
+        def destacar_ordenes_visualizador(row):
+          estado = str(row["Estado"])
+          h_conf = str(row["HoraConformidad"])
+
+          if h_conf != "--:--" and h_conf != "nan" and h_conf:
+            # Color verde suave para órdenes validadas con visto bueno
+            return [
+                "background-color: #d4edda; color: #155724;"
+                for _ in row.index
+            ]
+          elif estado == "Cerrada":
+            # Color amarillo/naranja suave para cerradas pendientes de visto bueno
+            return [
+                "background-color: #fff3cd; color: #856404;"
+                for _ in row.index
+            ]
+          elif estado == "Abierta":
+            # Color azul suave para órdenes abiertas informativas
+            return [
+                "background-color: #cce5ff; color: #004085;"
+                for _ in row.index
+            ]
+          else:
+            return ["" for _ in row.index]
+
+        try:
+          st.dataframe(
+              df_f.style.apply(destacar_ordenes_visualizador, axis=1),
+              use_container_width=True,
+          )
+        except Exception:
+          st.dataframe(df_f, use_container_width=True)
 
   # ---------------------------------------------------------
   # CATEGORÍA 4: ADMINISTRADOR (GESTIÓN TOTAL)
