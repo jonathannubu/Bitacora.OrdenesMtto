@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta
+import io
 import os
 import sqlite3
+from fpdf import FPDF
 import pandas as pd
 import streamlit as st
 
@@ -157,6 +159,233 @@ def actualizar_conformidad_con_evaluacion_db(
   )
   conn.commit()
   conn.close()
+
+
+# --- GENERADOR DE PDF PROFESIONAL (fpdf2) ---
+def generar_pdf_orden(row):
+  pdf = FPDF(orientation="P", unit="mm", format="A4")
+  pdf.add_page()
+
+  # Encabezado
+  pdf.set_font("helvetica", "B", 16)
+  pdf.cell(
+      0,
+      10,
+      "AVANGARD LABS - ORDEN DE TRABAJO DE MANTENIMIENTO",
+      new_x="LMARGIN",
+      new_y="NEXT",
+      align="C",
+  )
+
+  pdf.set_font("helvetica", "", 10)
+  pdf.cell(
+      0,
+      6,
+      f"Fecha de Emisión: {row.get('Fecha', '')} | Folio: {row.get('NumOrden', '')}",
+      new_x="LMARGIN",
+      new_y="NEXT",
+      align="C",
+  )
+  pdf.ln(4)
+
+  # Datos Generales
+  pdf.set_font("helvetica", "B", 11)
+  pdf.set_fill_color(220, 220, 220)
+  pdf.cell(0, 7, "  1. DATOS GENERALES", new_x="LMARGIN", new_y="NEXT", fill=True)
+
+  pdf.set_font("helvetica", "", 10)
+  col_w = 95
+  pdf.cell(
+      col_w,
+      6,
+      f"Departamento Solicitante: {row.get('Departamento', '')}",
+      new_x="RIGHT",
+      new_y="TOP",
+  )
+  pdf.cell(
+      col_w, 6, f"Área / Nave: {row.get('Area', '')}", new_x="LMARGIN", new_y="NEXT"
+  )
+
+  pdf.cell(
+      col_w,
+      6,
+      f"Equipo o Máquina: {row.get('Equipo', '')}",
+      new_x="RIGHT",
+      new_y="TOP",
+  )
+  pdf.cell(
+      col_w,
+      6,
+      f"Turno: {row.get('Turno', '')}",
+      new_x="LMARGIN",
+      new_y="NEXT",
+  )
+
+  pdf.cell(
+      col_w,
+      6,
+      f"Técnico Asignado: {row.get('Tecnico', '')}",
+      new_x="RIGHT",
+      new_y="TOP",
+  )
+  pdf.cell(
+      col_w,
+      6,
+      f"Estado Actual: {row.get('Estado', '')}",
+      new_x="LMARGIN",
+      new_y="NEXT",
+  )
+  pdf.cell(
+      0,
+      6,
+      f"Tipo de Mantenimiento: {row.get('TipoMantenimiento', '')}",
+      new_x="LMARGIN",
+      new_y="NEXT",
+  )
+  pdf.ln(3)
+
+  # Tiempos
+  pdf.set_font("helvetica", "B", 11)
+  pdf.cell(0, 7, "  2. CONTROL DE TIEMPOS", new_x="LMARGIN", new_y="NEXT", fill=True)
+
+  pdf.set_font("helvetica", "", 10)
+  pdf.cell(
+      col_w,
+      6,
+      f"Hora Emisión: {row.get('HoraEmision', '--:--')}",
+      new_x="RIGHT",
+      new_y="TOP",
+  )
+  pdf.cell(
+      col_w,
+      6,
+      f"Hora Recepción Técnico: {row.get('HoraRecepcion', '--:--')}",
+      new_x="LMARGIN",
+      new_y="NEXT",
+  )
+
+  pdf.cell(
+      col_w,
+      6,
+      f"Hora Cierre: {row.get('HoraCierre', '--:--')}",
+      new_x="RIGHT",
+      new_y="TOP",
+  )
+  pdf.cell(
+      col_w,
+      6,
+      f"Hora Visto Bueno: {row.get('HoraConformidad', '--:--')}",
+      new_x="LMARGIN",
+      new_y="NEXT",
+  )
+
+  pdf.cell(
+      col_w,
+      6,
+      f"Minutos de Espera: {row.get('MinutosEspera', 0)} min",
+      new_x="RIGHT",
+      new_y="TOP",
+  )
+  pdf.cell(
+      col_w,
+      6,
+      f"Minutos de Trabajo: {row.get('MinutosTrabajo', 0)} min",
+      new_x="LMARGIN",
+      new_y="NEXT",
+  )
+  pdf.cell(
+      0,
+      6,
+      f"Tiempo Total OT: {row.get('MinutosTotalOT', 0)} min",
+      new_x="LMARGIN",
+      new_y="NEXT",
+  )
+  pdf.ln(3)
+
+  # Descripción
+  pdf.set_font("helvetica", "B", 11)
+  pdf.cell(
+      0,
+      7,
+      "  3. DESCRIPCIÓN DE LA FALLA / TRABAJO REALIZADO",
+      new_x="LMARGIN",
+      new_y="NEXT",
+      fill=True,
+  )
+  pdf.set_font("helvetica", "", 10)
+  pdf.multi_cell(
+      0, 6, str(row.get("Descripcion", "Sin descripción registrada."))
+  )
+  pdf.ln(3)
+
+  # Evaluación
+  pdf.set_font("helvetica", "B", 11)
+  pdf.cell(
+      0,
+      7,
+      "  4. EVALUACIÓN DEL SERVICIO (VISTO BUENO)",
+      new_x="LMARGIN",
+      new_y="NEXT",
+      fill=True,
+  )
+  pdf.set_font("helvetica", "", 10)
+
+  eval_epp = row.get("EvalEPP")
+  if eval_epp is not None and str(eval_epp).strip() != "" and str(eval_epp) != "nan":
+    pdf.cell(
+        0,
+        6,
+        f"- Utilizó equipo de protección personal (EPP): {row.get('EvalEPP', 'N/D')}",
+        new_x="LMARGIN",
+        new_y="NEXT",
+    )
+    pdf.cell(
+        0,
+        6,
+        f"- Entregó el área limpia y ordenada: {row.get('EvalAreaLimpia', 'N/D')}",
+        new_x="LMARGIN",
+        new_y="NEXT",
+    )
+    pdf.cell(
+        0,
+        6,
+        f"- Mostró actitud de servicio y profesionalismo: {row.get('EvalActitud', 'N/D')}",
+        new_x="LMARGIN",
+        new_y="NEXT",
+    )
+    pdf.cell(
+        0,
+        6,
+        f"- Recomendó acciones para su no ocurrencia: {row.get('EvalRecomendacion', 'N/D')}",
+        new_x="LMARGIN",
+        new_y="NEXT",
+    )
+    pdf.cell(
+        0,
+        6,
+        f"- Explicó la causa que originó la falla: {row.get('EvalCausa', 'N/D')}",
+        new_x="LMARGIN",
+        new_y="NEXT",
+    )
+    comentario = row.get("ComentarioCalificacion")
+    if comentario and str(comentario) != "nan":
+      pdf.cell(
+          0,
+          6,
+          f"- Comentarios adicionales: {comentario}",
+          new_x="LMARGIN",
+          new_y="NEXT",
+      )
+  else:
+    pdf.cell(
+        0,
+        6,
+        "Orden pendiente de Visto Bueno o sin evaluación registrada.",
+        new_x="LMARGIN",
+        new_y="NEXT",
+    )
+
+  return bytes(pdf.output())
 
 
 # Gestión de Técnicos (CSV auxiliar beta)
@@ -503,10 +732,12 @@ else:
     )
 
     df_mis_ordenes = cargar_datos_db(
-        "SELECT id, Fecha, Turno, Tecnico, Area, Equipo, NumOrden,"
-        " TipoMantenimiento, HoraEmision, HoraCierre, HoraConformidad, Estado,"
-        " Descripcion, EvalEPP, EvalAreaLimpia, EvalActitud, EvalRecomendacion,"
-        " EvalCausa, ComentarioCalificacion FROM ordenes WHERE Departamento = ?",
+        "SELECT id, Fecha, Turno, Tecnico, Departamento, Area, Equipo, NumOrden,"
+        " TipoMantenimiento, HoraEmision, HoraRecepcion, HoraCierre,"
+        " HoraConformidad, MinutosEspera, MinutosTrabajo, MinutosTotalOT,"
+        " Estado, Descripcion, EvalEPP, EvalAreaLimpia, EvalActitud,"
+        " EvalRecomendacion, EvalCausa, ComentarioCalificacion FROM ordenes"
+        " WHERE Departamento = ?",
         params=(depto_actual,),
     )
 
@@ -516,7 +747,6 @@ else:
       fecha_hoy_str = datetime.now().strftime("%Y-%m-%d")
       ordenes_a_mostrar = []
 
-      # Filtro condicional: Si tiene visto bueno, solo mostrarse el mismo día de su emisión
       for index, row in df_mis_ordenes.iterrows():
         h_conf = str(row["HoraConformidad"])
         fecha_emision = str(row["Fecha"])
@@ -557,11 +787,21 @@ else:
             st.write(f"**Hora de Cierre:** {row['HoraCierre']}")
             st.write(f"**Visto Bueno / Conformidad:** {h_conf}")
 
+            # Botón de Descarga PDF para esta orden
+            pdf_bytes = generar_pdf_orden(row)
+            st.download_button(
+                label=f"📥 Descargar Orden {row['NumOrden']} en PDF",
+                data=pdf_bytes,
+                file_name=f"Orden_{row['NumOrden']}.pdf",
+                mime="application/pdf",
+                key=f"pdf_sol_{ot_id}",
+            )
+
             # Mostrar evaluación guardada si ya existe
             if eval_epp is not None and str(eval_epp).strip() != "" and str(eval_epp) != "nan":
               st.markdown("#### 📋 Evaluación del Servicio Registrada")
               st.write(f"- **Utilizó EPP:** {row.get('EvalEPP')}")
-              st.write(f"- **Entreó el área limpia:** {row.get('EvalAreaLimpia')}")
+              st.write(f"- **Entregó el área limpia:** {row.get('EvalAreaLimpia')}")
               st.write(f"- **Mostró actitud de servicio:** {row.get('EvalActitud')}")
               st.write(f"- **Recomendó acciones para no ocurrencia:** {row.get('EvalRecomendacion')}")
               st.write(f"- **Explicó la causa que originó la falla:** {row.get('EvalCausa')}")
@@ -620,10 +860,6 @@ else:
         "Atiende solicitudes nuevas o gestiona aquellas en espera asignadas a"
         " ti o disponibles en general."
     )
-    st.markdown(
-        "💡 **Indicadores:** 🔵 **Barra azul** (En espera / Pausadas), 🔴"
-        " **Barra roja** (Abiertas / Sin técnico)."
-    )
 
     if st.session_state["mensaje_alerta"]:
       st.success(st.session_state["mensaje_alerta"])
@@ -669,6 +905,17 @@ else:
           with st.expander(
               f"⚙️ Gestionar Orden [{row['NumOrden']}]", expanded=False
           ):
+            # Botón PDF para técnico
+            pdf_bytes = generar_pdf_orden(row)
+            st.download_button(
+                label=f"📥 Descargar Orden {row['NumOrden']} en PDF",
+                data=pdf_bytes,
+                file_name=f"Orden_{row['NumOrden']}.pdf",
+                mime="application/pdf",
+                key=f"pdf_tec_{ot_id}",
+            )
+            st.markdown("---")
+
             if esta_libre:
               if st.button(
                   f"Tomar esta Orden y Atender - {row['NumOrden']}",
@@ -901,48 +1148,25 @@ else:
         )
 
         st.markdown("---")
-        st.markdown("### 📈 Indicadores y Rendimiento")
-        col_ind1, col_ind2 = st.columns(2)
+        st.markdown("### 📋 Detalle de Órdenes y Descarga Individual en PDF")
 
-        with col_ind1:
-          st.markdown("#### ⚙️ Top de Fallas por Equipo")
-          if "Equipo" in df_f.columns and not df_f["Equipo"].empty:
-            top_equipos = df_f["Equipo"].value_counts().reset_index()
-            top_equipos.columns = ["Equipo", "Total Fallas"]
-            st.dataframe(
-                top_equipos, use_container_width=True, hide_index=True
+        for index, row in df_f.iterrows():
+          with st.expander(
+              f"[{row['NumOrden']}] Área: {row['Area']} | Equipo:"
+              f" {row['Equipo']} | Estado: {row['Estado']}"
+          ):
+            st.write(f"**Departamento:** {row.get('Departamento', 'N/D')}")
+            st.write(f"**Técnico:** {row['Tecnico']}")
+            st.write(f"**Descripción:** {row['Descripcion']}")
+
+            pdf_bytes = generar_pdf_orden(row)
+            st.download_button(
+                label=f"📥 Descargar Orden {row['NumOrden']} en PDF",
+                data=pdf_bytes,
+                file_name=f"Orden_{row['NumOrden']}.pdf",
+                mime="application/pdf",
+                key=f"pdf_vis_{row['id']}",
             )
-          else:
-            st.info("No hay datos suficientes de equipos.")
-
-        with col_ind2:
-          st.markdown("#### 👷‍♂️ Desglose de Órdenes por Técnico")
-          if "Tecnico" in df_f.columns and not df_f["Tecnico"].empty:
-            df_tecnicos_resumen = (
-                df_f.groupby(["Tecnico", "Estado"])
-                .size()
-                .unstack(fill_value=0)
-                .reset_index()
-            )
-            st.dataframe(df_tecnicos_resumen, use_container_width=True)
-          else:
-            st.info("No hay datos suficientes de técnicos.")
-
-        st.markdown("---")
-        st.markdown("### 📥 Exportar Reportes")
-
-        csv_data = df_f.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            label="📊 Descargar Reporte Filtrado en CSV (Excel)",
-            data=csv_data,
-            file_name=f"reporte_mantenimiento_{fecha_sel}.csv",
-            mime="text/csv",
-            use_container_width=True,
-        )
-
-        st.markdown("---")
-        st.markdown("### 📋 Detalle de Órdenes (Informativo)")
-        st.dataframe(df_f, use_container_width=True)
 
   # ---------------------------------------------------------
   # CATEGORÍA 4: ADMINISTRADOR (GESTIÓN TOTAL)
