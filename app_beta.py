@@ -316,7 +316,6 @@ if not st.session_state["sesion_activa"]:
   df_deptos_system = cargar_departamentos_df()
   df_tec_system = cargar_tecnicos_df()
 
-  # Si el usuario selecciona Visualizador, le damos acceso inmediato sin formulario de contraseña
   if "📊 Visualizador" in tipo_login:
     if st.sidebar.button(
         "Ingresar como Visualizador", use_container_width=True
@@ -465,6 +464,27 @@ else:
           }
           guardar_nueva_solicitud(nueva_ot)
           st.success(f"✅ ¡Solicitud {num_ot_generado} enviada con éxito!")
+
+    st.markdown("---")
+    st.markdown("### 📋 Mis Órdenes Abiertas / En Seguimiento")
+    st.markdown(
+        "Aquí puedes visualizar el estatus actual de tus reportes enviados:"
+    )
+
+    df_mis_ordenes = cargar_datos_db(
+        "SELECT Fecha, Turno, Tecnico, Area, Equipo, NumOrden, TipoMantenimiento,"
+        " HoraEmision, Estado, Descripcion FROM ordenes WHERE Departamento = ?"
+        " AND Estado IN ('Abierta', 'En Espera')",
+        params=(depto_actual,),
+    )
+
+    if df_mis_ordenes.empty:
+      st.info(
+          "No tienes órdenes abiertas ni en espera en este momento. Todas han"
+          " sido atendidas o cerradas."
+      )
+    else:
+      st.dataframe(df_mis_ordenes, use_container_width=True, hide_index=True)
 
   # ---------------------------------------------------------
   # CATEGORÍA 2: TÉCNICO DE MANTENIMIENTO
