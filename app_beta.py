@@ -965,8 +965,11 @@ else:
                             min_trab = 45
                             min_tot = min_esp + min_trab
 
+                            # Si se pone en espera, se libera el técnico para que la orden quede disponible para cualquier otro o sin dueño específico
+                            tec_final = "Pendiente de Asignar" if nuevo_estado == "En Espera" else tec_asignado
+
                             datos_act = {
-                                "Tecnico": tec_asignado,
+                                "Tecnico": tec_final,
                                 "TipoMantenimiento": tipo_mtto,
                                 "HoraRecepcion": h_rec_val,
                                 "HoraCierre": h_cie_val,
