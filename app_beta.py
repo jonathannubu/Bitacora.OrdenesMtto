@@ -167,7 +167,7 @@ def agregar_o_actualizar_tecnico(nombre, password):
   nombre = str(nombre).strip()
   password = str(password).strip().replace(".0", "")
   if not nombre or not password:
-    return False, "El nombre y la contraseña não pueden estar vacíos."
+    return False, "El nombre y la contraseña no pueden estar vacíos."
   if nombre in df_tec["Tecnico"].values:
     df_tec.loc[df_tec["Tecnico"] == nombre, "Password"] = password
     mensaje = f"Contraseña actualizada para {nombre}."
@@ -217,7 +217,7 @@ def agregar_o_actualizar_departamento(nombre, password):
   nombre = str(nombre).strip()
   password = str(password).strip().replace(".0", "")
   if not nombre or not password:
-    return False, "El departamento y la contraseña não pueden estar vacíos."
+    return False, "El departamento y la contraseña no pueden estar vacíos."
   if nombre in df_dep["Departamento"].values:
     df_dep.loc[df_dep["Departamento"] == nombre, "Password"] = password
     mensaje = f"Contraseña actualizada para el departamento {nombre}."
@@ -261,7 +261,7 @@ def agregar_area(nueva_area):
   areas = cargar_areas()
   nueva_area = str(nueva_area).strip()
   if not nueva_area:
-    return False, "El nombre del área não puede estar vacío."
+    return False, "El nombre del área no puede estar vacío."
   if nueva_area in areas:
     return False, "Esta área ya existe."
   areas.append(nueva_area)
@@ -277,7 +277,7 @@ def eliminar_area(area_a_borrar):
     areas.remove(area_a_borrar)
     pd.DataFrame({"Area": areas}).to_csv(AREAS_FILE, index=False)
     return True, "Área eliminada."
-  return False, "El área não existe."
+  return False, "El área no existe."
 
 
 # Inicializar Base de Datos Beta
@@ -296,7 +296,6 @@ if "mensaje_alerta" not in st.session_state:
 if "hora_default" not in st.session_state:
   st.session_state["hora_default"] = datetime.now().strftime("%H:%M")
 
-# Control de sesiones temporales para técnicos que tomaron una orden
 if "ordenes_en_atencion" not in st.session_state:
   st.session_state["ordenes_en_atencion"] = {}
 
@@ -404,7 +403,7 @@ if categoria_usuario == "📝 Solicitante (Producción)":
                 "Area": area_sol,
                 "Equipo": equipo_sol,
                 "NumOrden": num_ot_generado,
-                "TipoMantenimiento": "Correctivo",
+                "TipoMantenimiento": "1-Correctivo",
                 "HoraEmision": datetime.now().strftime("%H:%M"),
                 "HoraRecepcion": "--:--",
                 "HoraCierre": "--:--",
@@ -423,7 +422,7 @@ if categoria_usuario == "📝 Solicitante (Producción)":
           else:
             st.error("Contraseña de departamento incorrecta.")
         else:
-          st.error("Departamento não encontrado.")
+          st.error("Departamento no encontrado.")
 
 # ---------------------------------------------------------
 # CATEGORÍA 2: ÓRDENES DE TRABAJO ABIERTAS (TÉCNICOS)
@@ -467,7 +466,6 @@ elif categoria_usuario == "👷‍♂️ Órdenes de trabajo Abiertas":
             f" {row['HoraEmision']}"
         )
 
-        # FASE 1: El técnico se hace responsable mediante contraseña
         if not estat_atencion:
           with st.form(f"form_responsable_{ot_id}"):
             st.markdown("### 🛠️ Asignar Responsable de Atención")
@@ -515,9 +513,8 @@ elif categoria_usuario == "👷‍♂️ Órdenes de trabajo Abiertas":
                   else:
                     st.error("Contraseña incorrecta.")
                 else:
-                  st.error("Técnico não encontrado.")
+                  st.error("Técnico no encontrado.")
 
-        # FASE 2: Menú desplegado para completar y cerrar la orden una vez que ya se autenticó
         else:
           tec_activo = estat_atencion
           st.success(
@@ -527,13 +524,13 @@ elif categoria_usuario == "👷‍♂️ Órdenes de trabajo Abiertas":
           with st.form(f"form_cierre_{ot_id}"):
             col_t1, col_t2 = st.columns(2)
             with col_t1:
-              tipo_pto = st.selectbox(
-                  "Tipo de Mantenimiento",
+              clasificacion_trabajo = st.selectbox(
+                  "Clasificación de Trabajo",
                   [
-                      "Correctivo",
-                      "Preventivo",
-                      "Predictivo",
-                      "Ajuste / Mejora",
+                      "1-Correctivo",
+                      "2-Ajuste",
+                      "3-Configuracion de linea",
+                      "4-Mejora",
                   ],
                   key=f"tipo_{ot_id}",
               )
@@ -597,7 +594,7 @@ elif categoria_usuario == "👷‍♂️ Órdenes de trabajo Abiertas":
 
                 datos_actualizados = {
                     "Tecnico": tec_activo,
-                    "TipoMantenimiento": tipo_pto,
+                    "TipoMantenimiento": clasificacion_trabajo,
                     "HoraRecepcion": h_rec,
                     "HoraCierre": h_cie,
                     "HoraConformidad": h_con,
@@ -700,7 +697,7 @@ elif categoria_usuario == "📊 Visualizador / Gerencia":
             f" Conformidad: {('✅ ' + estado_con_actual) if ya_conforme else '⏳ Pendiente'}"
         ):
           st.write(f"**Técnico:** {row['Tecnico']}")
-          st.write(f"**Tipo de Mantenimiento:** {row['TipoMantenimiento']}")
+          st.write(f"**Clasificación de Trabajo:** {row['TipoMantenimiento']}")
           st.write(f"**Trabajo Realizado:** {row['Descripcion']}")
           st.write(
               f"**Horarios — Emisión:** {row['HoraEmision']} | Recepción:"
