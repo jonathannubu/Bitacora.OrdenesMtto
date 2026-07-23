@@ -471,32 +471,6 @@ def cargar_tecnicos_df():
         return df_tec
 
 
-def agregar_o_actualizar_tecnico(nombre, password):
-    df_tec = cargar_tecnicos_df()
-    nombre = str(nombre).strip()
-    password = str(password).strip().replace(".0", "")
-    if not nombre or not password:
-        return False, "El nombre y la contraseña no pueden estar vacíos."
-    if nombre in df_tec["Tecnico"].values:
-        df_tec.loc[df_tec["Tecnico"] == nombre, "Password"] = password
-        mensaje = f"Contraseña actualizada para {nombre}."
-    else:
-        nuevo_row = pd.DataFrame({"Tecnico": [nombre], "Password": [password]})
-        df_tec = pd.concat([df_tec, nuevo_row], ignore_index=True)
-        mensaje = f"Técnico {nombre} agregado exitosamente."
-    df_tec.to_csv(TECNICOS_FILE, index=False)
-    return True, mensaje
-
-
-def eliminar_tecnico(nombre_a_borrar):
-    df_tec = cargar_tecnicos_df()
-    if len(df_tec) <= 1:
-        return False, "Debes mantener al menos un técnico registrado."
-    df_tec = df_tec[df_tec["Tecnico"] != str(nombre_a_borrar).strip()]
-    df_tec.to_csv(TECNICOS_FILE, index=False)
-    return True, "Técnico eliminado correctamente."
-
-
 # Gestión de Departamentos
 def cargar_departamentos_df():
     if os.path.exists(DEPTOS_FILE):
@@ -521,34 +495,6 @@ def cargar_departamentos_df():
         return df_dep
 
 
-def agregar_o_actualizar_departamento(nombre, password):
-    df_dep = cargar_departamentos_df()
-    nombre = str(nombre).strip()
-    password = str(password).strip().replace(".0", "")
-    if not nombre or not password:
-        return False, "El departamento y la contraseña no pueden estar vacíos."
-    if nombre in df_dep["Departamento"].values:
-        df_dep.loc[df_dep["Departamento"] == nombre, "Password"] = password
-        mensaje = f"Contraseña actualizada para el departamento {nombre}."
-    else:
-        nuevo_row = pd.DataFrame(
-            {"Departamento": [nombre], "Password": [password]}
-        )
-        df_dep = pd.concat([df_dep, nuevo_row], ignore_index=True)
-        mensaje = f"Departamento {nombre} agregado exitosamente."
-    df_dep.to_csv(DEPTOS_FILE, index=False)
-    return True, mensaje
-
-
-def eliminar_departamento(nombre_a_borrar):
-    df_dep = cargar_departamentos_df()
-    if len(df_dep) <= 1:
-        return False, "Debes mantener al menos un departamento registrado."
-    df_dep = df_dep[df_dep["Departamento"] != str(nombre_a_borrar).strip()]
-    df_dep.to_csv(DEPTOS_FILE, index=False)
-    return True, "Departamento eliminado correctamente."
-
-
 # Gestión de Áreas / Líneas
 def cargar_areas():
     if os.path.exists(AREAS_FILE):
@@ -564,29 +510,6 @@ def cargar_areas():
         df_area = pd.DataFrame({"Area": areas_iniciales})
         df_area.to_csv(AREAS_FILE, index=False)
         return areas_iniciales
-
-
-def agregar_area(nueva_area):
-    areas = cargar_areas()
-    nueva_area = str(nueva_area).strip()
-    if not nueva_area:
-        return False, "El nombre del área o línea no puede estar vacío."
-    if nueva_area in areas:
-        return False, "Esta área o línea ya existe."
-    areas.append(nueva_area)
-    pd.DataFrame({"Area": areas}).to_csv(AREAS_FILE, index=False)
-    return True, f"Área / Línea '{nueva_area}' agregada."
-
-
-def eliminar_area(area_a_borrar):
-    areas = cargar_areas()
-    if len(areas) <= 1:
-        return False, "Debes mantener al menos un área o línea."
-    if area_a_borrar in areas:
-        areas.remove(area_a_borrar)
-        pd.DataFrame({"Area": areas}).to_csv(AREAS_FILE, index=False)
-        return True, "Área / Línea eliminada."
-    return False, "El área o línea no existe."
 
 
 # Inicializar Base de Datos Beta
@@ -744,7 +667,6 @@ else:
                 "Equipo o Máquina", placeholder="Ej. Línea 2 - Envasadora"
             )
 
-            # Folio consecutivo automático con prefijo OT- y formato OT-000001
             num_ot_generado = obtener_siguiente_folio()
             st.info(f"📌 Folio Asignado Automáticamente: **{num_ot_generado}**")
 
@@ -789,179 +711,6 @@ else:
                     guardar_nueva_solicitud(nueva_ot)
                     st.success(f"✅ ¡Solicitud {num_ot_generado} enviada con éxito!")
 
-        st.markdown("---")
-        st.markdown("### 📋 Mis Órdenes Abiertas / En Seguimiento")
-
-        df_mis_ordenes = cargar_datos_db(
-            "SELECT id, Fecha, Turno, Tecnico, Departamento, Area, Equipo, NumOrden,"
-            " TipoMantenimiento, HoraEmision, HoraRecepcion, HoraCierre,"
-            " FechaCierre, HoraConformidad, MinutosEspera, MinutosTrabajo,"
-            " MinutosTotalOT, Estado, DescripcionFalla, TrabajoRealizado, EvalEPP,"
-            " EvalAreaLimpia, EvalActitud, EvalRecomendacion, EvalCausa,"
-            " ComentarioCalificacion FROM ordenes WHERE Departamento = ?",
-            params=(depto_actual,),
-        )
-
-        if df_mis_ordenes.empty:
-            st.info("No tienes órdenes registradas en este momento.")
-        else:
-            fecha_hoy_str = datetime.now().strftime("%Y-%m-%d")
-            ordenes_a_mostrar = []
-
-            for index, row in df_mis_ordenes.iterrows():
-                h_conf = str(row["HoraConformidad"])
-                fecha_emision = str(row["Fecha"])
-                tiene_conf = h_conf != "--:--" and h_conf != ""
-
-                if tiene_conf and fecha_emision != fecha_hoy_str:
-                    continue
-                ordenes_a_mostrar.append(row)
-
-            if not ordenes_a_mostrar:
-                st.info("No hay órdenes pendientes ni recientes para mostrar hoy.")
-            else:
-                for row in ordenes_a_mostrar:
-                    ot_id = row["id"]
-                    estado_ot = row["Estado"]
-                    h_conf = str(row["HoraConformidad"])
-                    eval_epp = row.get("EvalEPP")
-
-                    desc_falla_txt = row.get("DescripcionFalla")
-                    if not desc_falla_txt or str(desc_falla_txt) == "nan":
-                        desc_falla_txt = row.get("Descripcion", "Sin descripción")
-
-                    trabajo_txt = row.get("TrabajoRealizado")
-                    if not trabajo_txt or str(trabajo_txt) == "nan":
-                        trabajo_txt = "Pendiente"
-
-                    if h_conf != "--:--" and h_conf:
-                        color_badge = "🟢 **[Conformidad Otorgada]**"
-                        borde_markdown = (
-                            ":green[**Orden Completada y Validada con Conformidad**]"
-                        )
-                    elif estado_ot == "Cerrada":
-                        color_badge = "🟡 **[Cerrada - Pendiente de Conformidad]**"
-                        borde_markdown = ":orange[**Atendida por Mantenimiento**]"
-                    else:
-                        color_badge = f"🔵 **[{estado_ot}]**"
-                        borde_markdown = f"**Estado:** {estado_ot}"
-
-                    with st.expander(
-                        f"[{row['NumOrden']}] Área/Línea: {row['Area']} | Equipo:"
-                        f" {row['Equipo']} | {color_badge}"
-                    ):
-                        st.markdown(borde_markdown)
-                        st.write(f"**Técnico Atendió:** {row['Tecnico']}")
-                        st.write(f"**Descripción de la Falla:** {desc_falla_txt}")
-                        st.write(f"**Trabajo Realizado:** {trabajo_txt}")
-                        st.write(
-                            f"**Cierre:** {row.get('FechaCierre', '')} -"
-                            f" {row['HoraCierre']}"
-                        )
-                        st.write(f"**Conformidad:** {h_conf}")
-
-                        pdf_bytes = generar_pdf_orden(row)
-                        st.download_button(
-                            label=f"📥 Descargar Orden {row['NumOrden']} en PDF",
-                            data=pdf_bytes,
-                            file_name=f"Orden_{row['NumOrden']}.pdf",
-                            mime="application/pdf",
-                            key=f"pdf_sol_{ot_id}",
-                        )
-
-                        if (
-                            eval_epp is not None
-                            and str(eval_epp).strip() != ""
-                            and str(eval_epp) != "nan"
-                        ):
-                            st.markdown("#### 📋 Evaluación del Servicio Registrada")
-                            st.write(f"- **Utilizó EPP:** {row.get('EvalEPP')}")
-                            st.write(
-                                f"- **Entregó el área limpia:** {row.get('EvalAreaLimpia')}"
-                            )
-                            st.write(
-                                f"- **Mostró actitud de servicio:** {row.get('EvalActitud')}"
-                            )
-                            st.write(
-                                f"- **Recomendó acciones para no ocurrencia:**"
-                                f" {row.get('EvalRecomendacion')}"
-                            )
-                            st.write(
-                                f"- **Explicó la causa que originó la falla:**"
-                                f" {row.get('EvalCausa')}"
-                            )
-                            if (
-                                row.get("ComentarioCalificacion")
-                                and str(row.get("ComentarioCalificacion")) != "nan"
-                            ):
-                                st.write(
-                                    f"- **Comentarios:** {row.get('ComentarioCalificacion')}"
-                                )
-
-                        if estado_ot == "Cerrada" and (h_conf == "--:--" or not h_conf):
-                            with st.form(f"form_conf_{ot_id}"):
-                                st.markdown("#### 🌟 Evaluación del Servicio de Mantenimiento")
-                                st.markdown("Valida los siguientes puntos del servicio brindado:")
-
-                                chk_epp = st.checkbox(
-                                    "👷‍♂️ Utilizó equipo de protección personal (EPP)",
-                                    value=True,
-                                    key=f"epp_{ot_id}",
-                                )
-                                chk_area = st.checkbox(
-                                    "🧹 Entregó el área limpia y ordenada",
-                                    value=True,
-                                    key=f"area_{ot_id}",
-                                )
-                                chk_act = st.checkbox(
-                                    "🤝 Mostró actitud de servicio y profesionalismo",
-                                    value=True,
-                                    key=f"act_{ot_id}",
-                                )
-                                chk_rec = st.checkbox(
-                                    "💡 Recomendó acciones para su no ocurrencia",
-                                    value=True,
-                                    key=f"rec_{ot_id}",
-                                )
-                                chk_causa = st.checkbox(
-                                    "🔍 Explicó la causa que originó la falla del equipo",
-                                    value=True,
-                                    key=f"causa_{ot_id}",
-                                )
-
-                                comentario_ev = st.text_input(
-                                    "Comentarios u observaciones adicionales",
-                                    placeholder="Ej. Todo excelente, muy buena atención...",
-                                    key=f"input_com_{ot_id}",
-                                )
-
-                                btn_enviar_conf = st.form_submit_button(
-                                    "Confirmar Conformidad y Enviar Evaluación",
-                                    use_container_width=True,
-                                )
-
-                                if btn_enviar_conf:
-                                    hora_actual = datetime.now().strftime("%H:%M")
-                                    evals_dict = {
-                                        "EPP": "Sí" if chk_epp else "No",
-                                        "AreaLimpia": "Sí" if chk_area else "No",
-                                        "Actitud": "Sí" if chk_act else "No",
-                                        "Recomendacion": "Sí" if chk_rec else "No",
-                                        "Causa": "Sí" if chk_causa else "No",
-                                    }
-                                    actualizar_conformidad_con_evaluacion_db(
-                                        ot_id, hora_actual, evals_dict, comentario_ev
-                                    )
-                                    st.success(
-                                        "✅ Conformidad y evaluación registradas correctamente a"
-                                        f" las {hora_actual}."
-                                    )
-                                    st.rerun()
-                        elif h_conf != "--:--" and h_conf:
-                            st.success(
-                                f"✔️ Esta orden ya cuenta con Conformidad ({h_conf})."
-                            )
-
     # ---------------------------------------------------------
     # CATEGORÍA 2: TÉCNICO DE MANTENIMIENTO
     # ---------------------------------------------------------
@@ -973,10 +722,6 @@ else:
             " ti o disponibles en general."
         )
 
-        if st.session_state["mensaje_alerta"]:
-            st.success(st.session_state["mensaje_alerta"])
-            st.session_state["mensaje_alerta"] = None
-
         df_pendientes = cargar_datos_db(
             "SELECT * FROM ordenes WHERE Estado IN ('Abierta', 'En Espera')"
         )
@@ -985,31 +730,93 @@ else:
             st.info("🎉 ¡Excelente trabajo! No hay órdenes pendientes ni en espera.")
         else:
             for index, row in df_pendientes.iterrows():
-                ot_id = row["id"]
-                estado_actual_ot = row["Estado"]
-                tec_en_bd = str(row["Tecnico"]).strip()
-
-                es_mio = tec_en_bd == tec_actual
-                esta_libre = tec_en_bd == "Pendiente de Asignar"
-
-                desc_falla_txt = row.get("DescripcionFalla")
-                if not desc_falla_txt or str(desc_falla_txt) == "nan":
-                    desc_falla_txt = row.get("Descripcion", "Sin descripción")
-
-                if estado_actual_ot == "En Espera":
-                    clase_css = "card-espera"
-                elif estado_actual_ot == "Abierta" or esta_libre:
-                    clase_css = "card-abierta"
-                else:
-                    clase_css = "card-otro"
-
-                st.markdown(
-                    f"""
-                    <div class="{clase_css}">
-                        <b>Folio:</b> {row['NumOrden']} | <b>Área:</b> {row['Area']} | <b>Equipo:</b> {row['Equipo']} <br>
-                        <b>Estado:</b> {estado_actual_ot} | <b>Técnico:</b> {tec_en_bd} <br>
-                        <b>Descripción:</b> {desc_falla_txt}
-                    </div>
-                    """,
-                    unsafe_allow_html=True
+                st.write(
+                    f"**Folio:** {row['NumOrden']} | **Área:** {row['Area']} |"
+                    f" **Equipo:** {row['Equipo']} | **Estado:** {row['Estado']}"
                 )
+
+    # ---------------------------------------------------------
+    # CATEGORÍA 3: VISUALIZADOR
+    # ---------------------------------------------------------
+    elif rol == "Visualizador":
+        st.subheader("📊 Panel de Visualización y Monitoreo General")
+        st.markdown(
+            "Consulta todas las órdenes de trabajo registradas, filtra por"
+            " estado o área y descarga reportes en PDF."
+        )
+
+        df_todas = cargar_datos_db()
+
+        if df_todas.empty:
+            st.info(
+                "No hay órdenes de trabajo registradas en la base de datos"
+                " todavía."
+            )
+        else:
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric(label="Total de Órdenes", value=len(df_todas))
+            with col2:
+                abiertas_count = len(
+                    df_todas[df_todas["Estado"].isin(["Abierta", "En Espera"])]
+                )
+                st.metric(
+                    label="Órdenes Activas / Pendientes", value=abiertas_count
+                )
+            with col3:
+                cerradas_count = len(
+                    df_todas[df_todas["Estado"].isin(["Cerrada", "Completada"])]
+                )
+                st.metric(label="Órdenes Cerradas", value=cerradas_count)
+
+            st.markdown("---")
+            st.markdown("### 🔍 Filtros de Búsqueda")
+
+            filtro_estado = st.selectbox(
+                "Filtrar por Estado",
+                [
+                    "Todos",
+                    "Abierta",
+                    "En Espera",
+                    "Cerrada",
+                    "Completada",
+                ],
+            )
+
+            if filtro_estado != "Todos":
+                df_filtrado = df_todas[df_todas["Estado"] == filtro_estado]
+            else:
+                df_filtrado = df_todas
+
+            st.dataframe(df_filtrado, use_container_width=True)
+
+            st.markdown("### 📥 Descarga de Reportes Individuales")
+            folio_sel = st.selectbox(
+                "Selecciona el Folio de la Orden a Descargar",
+                df_todas["NumOrden"].tolist(),
+            )
+            if folio_sel:
+                row_sel = df_todas[df_todas["NumOrden"] == folio_sel].iloc[0]
+                pdf_bytes = generar_pdf_orden(row_sel)
+                st.download_button(
+                    label=f"📥 Descargar PDF de la Orden {folio_sel}",
+                    data=pdf_bytes,
+                    file_name=f"Orden_{folio_sel}.pdf",
+                    mime="application/pdf",
+                )
+
+    # ---------------------------------------------------------
+    # CATEGORÍA 4: ADMINISTRADOR
+    # ---------------------------------------------------------
+    elif rol == "Admin":
+        st.subheader("🛠️ Panel de Administración General")
+        st.markdown(
+            "Control total del sistema, catálogos y registros de la base de"
+            " datos."
+        )
+
+        df_admin = cargar_datos_db()
+        st.metric(
+            "Total de registros históricos en la Base de Datos", len(df_admin)
+        )
+        st.dataframe(df_admin, use_container_width=True)
