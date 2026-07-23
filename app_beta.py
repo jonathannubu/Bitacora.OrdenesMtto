@@ -472,6 +472,10 @@ def cargar_tecnicos_df():
         return df_tec
 
 
+def guardar_tecnicos_df(df):
+    df.to_csv(TECNICOS_FILE, index=False)
+
+
 # Gestión de Departamentos
 def cargar_departamentos_df():
     if os.path.exists(DEPTOS_FILE):
@@ -496,6 +500,10 @@ def cargar_departamentos_df():
         return df_dep
 
 
+def guardar_departamentos_df(df):
+    df.to_csv(DEPTOS_FILE, index=False)
+
+
 # Gestión de Áreas / Líneas
 def cargar_areas():
     if os.path.exists(AREAS_FILE):
@@ -511,6 +519,11 @@ def cargar_areas():
         df_area = pd.DataFrame({"Area": areas_iniciales})
         df_area.to_csv(AREAS_FILE, index=False)
         return areas_iniciales
+
+
+def guardar_areas_df(lista_areas):
+    df_area = pd.DataFrame({"Area": lista_areas})
+    df_area.to_csv(AREAS_FILE, index=False)
 
 
 # Inicializar Base de Datos Beta
@@ -1031,46 +1044,189 @@ else:
             " órdenes de la base de datos."
         )
 
-        df_admin = cargar_datos_db()
-        st.metric(
-            "Total de registros históricos en la Base de Datos", len(df_admin)
-        )
-        st.dataframe(df_admin, use_container_width=True)
+        tab_admin1, tab_admin2, tab_admin3, tab_admin4 = st.tabs([
+            "📋 Órdenes de Trabajo",
+            "👷‍♂️ Gestión de Técnicos",
+            "🏢 Gestión de Departamentos",
+            "📍 Gestión de Áreas / Líneas",
+        ])
 
-        st.markdown("---")
-        st.markdown("### 🗑️ Gestión y Eliminación de Órdenes")
-        st.warning(
-            "⚠️ Precaución: Eliminar una orden la borrará de forma permanente de"
-            " la base de datos."
-        )
+        with tab_admin1:
+            st.markdown("### Histórico de Órdenes y Eliminación")
+            df_admin = cargar_datos_db()
+            st.metric(
+                "Total de registros históricos en la Base de Datos",
+                len(df_admin),
+            )
+            st.dataframe(df_admin, use_container_width=True)
 
-        if not df_admin.empty:
-            folio_a_borrar = st.selectbox(
-                "Selecciona el Folio de la Orden a Eliminar",
-                df_admin["NumOrden"].tolist(),
-                key="select_borrar_folio",
+            st.markdown("---")
+            st.markdown("### 🗑️ Gestión y Eliminación de Órdenes")
+            st.warning(
+                "⚠️ Precaución: Eliminar una orden la borrará de forma"
+                " permanente de la base de datos."
             )
 
-            if folio_a_borrar:
-                row_borrar = df_admin[
-                    df_admin["NumOrden"] == folio_a_borrar
-                ].iloc[0]
-                st.info(
-                    f"Información de la Orden seleccionada: **Folio OT-{row_borrar['NumOrden']}** |"
-                    f" **Área/Línea:** {row_borrar['AreaLinea']} | **Equipo:**"
-                    f" {row_borrar['Equipo']} | **Estado:**"
-                    f" {row_borrar['Estado']}"
+            if not df_admin.empty:
+                folio_a_borrar = st.selectbox(
+                    "Selecciona el Folio de la Orden a Eliminar",
+                    df_admin["NumOrden"].tolist(),
+                    key="select_borrar_folio",
                 )
 
-                if st.button(
-                    f"❌ Eliminar Permanentemente la Orden OT-{folio_a_borrar}",
-                    type="primary",
-                ):
-                    eliminar_orden_db(row_borrar["id"])
-                    st.success(
-                        f"✅ Orden OT-{folio_a_borrar} eliminada correctamente de la"
-                        " base de datos."
+                if folio_a_borrar:
+                    row_borrar = df_admin[
+                        df_admin["NumOrden"] == folio_a_borrar
+                    ].iloc[0]
+                    st.info(
+                        f"Información de la Orden seleccionada: **Folio OT-{row_borrar['NumOrden']}** |"
+                        f" **Área/Línea:** {row_borrar['AreaLinea']} | **Equipo:**"
+                        f" {row_borrar['Equipo']} | **Estado:**"
+                        f" {row_borrar['Estado']}"
                     )
+
+                    if st.button(
+                        f"❌ Eliminar Permanentemente la Orden OT-{folio_a_borrar}",
+                        type="primary",
+                    ):
+                        eliminar_orden_db(row_borrar["id"])
+                        st.success(
+                            f"✅ Orden OT-{folio_a_borrar} eliminada"
+                            " correctamente de la base de datos."
+                        )
+                        st.rerun()
+            else:
+                st.info("No hay registros disponibles para eliminar.")
+
+        with tab_admin2:
+            st.markdown("### Alta y Control de Técnicos de Mantenimiento")
+            df_tec_admin = cargar_tecnicos_df()
+            st.dataframe(df_tec_admin, use_container_width=True)
+
+            with st.form("form_agregar_tecnico"):
+                st.markdown("#### Registrar Nuevo Técnico")
+                nuevo_tec_nombre = st.text_input("Nombre del Técnico")
+                nuevo_tec_pass = st.text_input(
+                    "Contraseña de Acceso", type="password"
+                )
+                btn_add_tec = st.form_submit_button(
+                    "Guardar Nuevo Técnico", use_container_width=True
+                )
+
+                if btn_add_tec:
+                    if not nuevo_tec_nombre or not nuevo_tec_pass:
+                        st.warning("Completa el nombre y la contraseña.")
+                    else:
+                        nueva_fila = pd.DataFrame({
+                            "Tecnico": [nuevo_tec_nombre.strip()],
+                            "Password": [nuevo_tec_pass.strip()],
+                        })
+                        df_tec_admin = pd.concat(
+                            [df_tec_admin, nueva_fila], ignore_index=True
+                        )
+                        guardar_tecnicos_df(df_tec_admin)
+                        st.success(
+                            f"✅ Técnico '{nuevo_tec_nombre}' agregado"
+                            " correctamente."
+                        )
+                        st.rerun()
+
+            if not df_tec_admin.empty:
+                st.markdown("#### Eliminar Técnico")
+                tec_a_borrar = st.selectbox(
+                    "Selecciona Técnico a Eliminar",
+                    df_tec_admin["Tecnico"].tolist(),
+                )
+                if st.button("🗑️ Eliminar Técnico Seleccionado"):
+                    df_tec_admin = df_tec_admin[
+                        df_tec_admin["Tecnico"] != tec_a_borrar
+                    ]
+                    guardar_tecnicos_df(df_tec_admin)
+                    st.success("✅ Técnico eliminado correctamente.")
                     st.rerun()
-        else:
-            st.info("No hay registros disponibles para eliminar.")
+
+        with tab_admin3:
+            st.markdown("### Alta y Control de Departamentos Solicitantes")
+            df_dep_admin = cargar_departamentos_df()
+            st.dataframe(df_dep_admin, use_container_width=True)
+
+            with st.form("form_agregar_departamento"):
+                st.markdown("#### Registrar Nuevo Departamento")
+                nuevo_dep_nombre = st.text_input("Nombre del Departamento")
+                nuevo_dep_pass = st.text_input(
+                    "Contraseña de Acceso", type="password"
+                )
+                btn_add_dep = st.form_submit_button(
+                    "Guardar Nuevo Departamento", use_container_width=True
+                )
+
+                if btn_add_dep:
+                    if not nuevo_dep_nombre or not nuevo_dep_pass:
+                        st.warning("Completa el departamento y la contraseña.")
+                    else:
+                        nueva_fila_dep = pd.DataFrame({
+                            "Departamento": [nuevo_dep_nombre.strip()],
+                            "Password": [nuevo_dep_pass.strip()],
+                        })
+                        df_dep_admin = pd.concat(
+                            [df_dep_admin, nueva_fila_dep], ignore_index=True
+                        )
+                        guardar_departamentos_df(df_dep_admin)
+                        st.success(
+                            f"✅ Departamento '{nuevo_dep_nombre}' agregado"
+                            " correctamente."
+                        )
+                        st.rerun()
+
+            if not df_dep_admin.empty:
+                st.markdown("#### Eliminar Departamento")
+                dep_a_borrar = st.selectbox(
+                    "Selecciona Departamento a Eliminar",
+                    df_dep_admin["Departamento"].tolist(),
+                )
+                if st.button("🗑️ Eliminar Departamento Seleccionado"):
+                    df_dep_admin = df_dep_admin[
+                        df_dep_admin["Departamento"] != dep_a_borrar
+                    ]
+                    guardar_departamentos_df(df_dep_admin)
+                    st.success("✅ Departamento eliminado correctamente.")
+                    st.rerun()
+
+        with tab_admin4:
+            st.markdown("### Alta y Control de Áreas / Líneas")
+            lista_areas_admin = cargar_areas()
+            st.write(lista_areas_admin)
+
+            with st.form("form_agregar_area"):
+                st.markdown("#### Registrar Nueva Área / Línea")
+                nueva_area_nombre = st.text_input(
+                    "Nombre de la Nueva Área o Línea"
+                )
+                btn_add_area = st.form_submit_button(
+                    "Guardar Área / Línea", use_container_width=True
+                )
+
+                if btn_add_area:
+                    if not nueva_area_nombre:
+                        st.warning("Ingresa el nombre del área o línea.")
+                    elif nueva_area_nombre.strip() in lista_areas_admin:
+                        st.error("Esa área o línea ya existe.")
+                    else:
+                        lista_areas_admin.append(nueva_area_nombre.strip())
+                        guardar_areas_df(lista_areas_admin)
+                        st.success(
+                            f"✅ Área '{nueva_area_nombre}' agregada"
+                            " correctamente."
+                        )
+                        st.rerun()
+
+            if lista_areas_admin:
+                st.markdown("#### Eliminar Área / Línea")
+                area_a_borrar = st.selectbox(
+                    "Selecciona Área o Línea a Eliminar", lista_areas_admin
+                )
+                if st.button("🗑️ Eliminar Área / Línea Seleccionada"):
+                    lista_areas_admin.remove(area_a_borrar)
+                    guardar_areas_df(lista_areas_admin)
+                    st.success("✅ Área / Línea eliminada correctamente.")
+                    st.rerun()
