@@ -603,7 +603,7 @@ inicializar_bd()
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
-    page_title="Mesa de Ayuda [BETA] - Avangard Labs",
+    page_title="Avangard Labs Control OT [BETA]",
     page_icon="⚙️",
     layout="wide",
 )
@@ -618,7 +618,7 @@ if "rol_usuario" not in st.session_state:
 if "nombre_usuario" not in st.session_state:
   st.session_state["nombre_usuario"] = None
 
-st.title("⚙️ Sistema de Órdenes de Trabajo (Fase Beta) - Avangard Labs")
+st.title("⚙️ Avangard Labs Control OT (Fase Beta)")
 
 # --- MENÚ LATERAL Y CONTROL DE SESIÓN ---
 st.sidebar.title("Control de Acceso [BETA]")
