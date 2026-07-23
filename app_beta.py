@@ -309,7 +309,7 @@ categoria_usuario = st.sidebar.selectbox(
     [
         "📝 Solicitante (Producción)",
         "👷‍♂️ Órdenes de trabajo Abiertas y en Espera",
-        "📊 Visualizador / Gerencia",
+        "📊 Visualizador",
         "🛠️ Administrador (Gestión Total)",
     ],
 )
@@ -734,9 +734,9 @@ elif categoria_usuario == "👷‍♂️ Órdenes de trabajo Abiertas y en Esper
                   st.error("Técnico no encontrado en el sistema.")
 
 # ---------------------------------------------------------
-# CATEGORÍA 3: VISUALIZADOR / GERENCIA
+# CATEGORÍA 3: VISUALIZADOR
 # ---------------------------------------------------------
-elif categoria_usuario == "📊 Visualizador / Gerencia":
+elif categoria_usuario == "📊 Visualizador":
   st.subheader(
       "📊 Panel de Visualización, Seguimiento y Conformidad [BETA]"
   )
@@ -801,6 +801,40 @@ elif categoria_usuario == "📊 Visualizador / Gerencia":
           value=len(df_f[df_f["Estado"] == "Abierta"]),
       )
 
+      # --- NUEVOS INDICADORES: TOP DE FALLAS POR EQUIPO Y DESGLOSE POR TÉCNICO ---
+      st.markdown("---")
+      st.markdown("### 📈 Indicadores y Rendimiento")
+
+      col_ind1, col_ind2 = st.columns(2)
+
+      with col_ind1:
+        st.markdown("#### ⚙️ Top de Fallas por Equipo")
+        if "Equipo" in df_f.columns and not df_f["Equipo"].empty:
+          top_equipos = (
+              df_f["Equipo"]
+              .value_counts()
+              .reset_index()
+          )
+          top_equipos.columns = ["Equipo", "Total Fallas"]
+          st.bar_chart(top_equipos.set_index("Equipo"))
+        else:
+          st.info("No hay datos suficientes de equipos.")
+
+      with col_ind2:
+        st.markdown("#### 👷‍♂️ Desglose de Órdenes por Técnico")
+        if "Tecnico" in df_f.columns and not df_f["Tecnico"].empty:
+          # Tabla cruzada o conteo por técnico y estado
+          df_tecnicos_resumen = (
+              df_f.groupby(["Tecnico", "Estado"])
+              .size()
+              .unstack(fill_value=0)
+              .reset_index()
+          )
+          st.dataframe(df_tecnicos_resumen, use_container_width=True)
+        else:
+          st.info("No hay datos suficientes de técnicos.")
+
+      st.markdown("---")
       st.markdown("### 📋 Detalle de Órdenes y Dar Conformidad")
 
       for index, row in df_f.iterrows():
