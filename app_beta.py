@@ -361,7 +361,6 @@ if not st.session_state["sesion_activa"]:
           st.error("Contraseña incorrecta.")
 
       elif "Visualizador" in tipo_login:
-        # Visualizador libre o con contraseña general si lo deseas
         st.session_state["sesion_activa"] = True
         st.session_state["rol_usuario"] = "Visualizador"
         st.session_state["nombre_usuario"] = "Visualizador"
@@ -658,7 +657,7 @@ else:
                     st.error("Error al procesar las horas automáticas.")
 
   # ---------------------------------------------------------
-  # CATEGORÍA 3: VISUALIZADOR (CON EXPORTACIÓN A EXCEL/CSV)
+  # CATEGORÍA 3: VISUALIZADOR
   # ---------------------------------------------------------
   elif rol == "Visualizador":
     st.subheader(
@@ -728,11 +727,16 @@ else:
         col_ind1, col_ind2 = st.columns(2)
 
         with col_ind1:
-          st.markdown("#### ⚙️ Top de Fallas por Equipo")
+          st.markdown("#### ⚙️ Top de Fallas por Equipo (En Lista)")
           if "Equipo" in df_f.columns and not df_f["Equipo"].empty:
             top_equipos = df_f["Equipo"].value_counts().reset_index()
             top_equipos.columns = ["Equipo", "Total Fallas"]
-            st.bar_chart(top_equipos.set_index("Equipo"))
+            # Mostrar como tabla/lista ordenada limpia en lugar de gráfico
+            st.dataframe(
+                top_equipos, use_container_width=True, hide_index=True
+            )
+          else:
+            st.info("No hay datos suficientes de equipos.")
 
         with col_ind2:
           st.markdown("#### 👷‍♂️ Desglose de Órdenes por Técnico")
@@ -744,11 +748,12 @@ else:
                 .reset_index()
             )
             st.dataframe(df_tecnicos_resumen, use_container_width=True)
+          else:
+            st.info("No hay datos suficientes de técnicos.")
 
         st.markdown("---")
         st.markdown("### 📥 Exportar Reportes")
 
-        # Conversión del DataFrame filtrado a CSV para descarga directa
         csv_data = df_f.to_csv(index=False).encode("utf-8")
         st.download_button(
             label="📊 Descargar Reporte Filtrado en CSV (Excel)",
