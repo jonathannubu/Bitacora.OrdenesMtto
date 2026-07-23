@@ -34,9 +34,25 @@ def inicializar_bd():
             MinutosTrabajo INTEGER,
             MinutosTotalOT INTEGER,
             Descripcion TEXT,
-            Estado TEXT
+            Estado TEXT,
+            CalificacionServicio INTEGER,
+            ComentarioCalificacion TEXT
         )
     """)
+  # Compatibilidad con bases de datos existentes si faltan las columnas
+  try:
+    cursor.execute(
+        "ALTER TABLE ordenes ADD COLUMN CalificacionServicio INTEGER"
+    )
+  except sqlite3.OperationalError:
+    pass
+  try:
+    cursor.execute(
+        "ALTER TABLE ordenes ADD COLUMN ComentarioCalificacion TEXT"
+    )
+  except sqlite3.OperationalError:
+    pass
+
   conn.commit()
   conn.close()
 
@@ -115,14 +131,16 @@ def actualizar_orden_db(id_orden, datos):
   conn.close()
 
 
-def actualizar_conformidad_db(id_orden, hora_con):
+def actualizar_conformidad_con_evaluacion_db(
+    id_orden, hora_con, calificacion, comentario
+):
   conn = sqlite3.connect(DB_FILE)
   cursor = conn.cursor()
   cursor.execute(
       """
-        UPDATE ordenes SET HoraConformidad=? WHERE id=?
+        UPDATE ordenes SET HoraConformidad=?, CalificacionServicio=?, ComentarioCalificacion=? WHERE id=?
     """,
-      (hora_con, id_orden),
+      (hora_con, calificacion, comentario, id_orden),
   )
   conn.commit()
   conn.close()
@@ -474,54 +492,106 @@ else:
     df_mis_ordenes = cargar_datos_db(
         "SELECT id, Fecha, Turno, Tecnico, Area, Equipo, NumOrden,"
         " TipoMantenimiento, HoraEmision, HoraCierre, HoraConformidad, Estado,"
-        " Descripcion FROM ordenes WHERE Departamento = ?",
+        " Descripcion, CalificacionServicio, ComentarioCalificacion FROM ordenes"
+        " WHERE Departamento = ?",
         params=(depto_actual,),
     )
 
     if df_mis_ordenes.empty:
       st.info("No tienes órdenes registradas en este momento.")
     else:
+      fecha_hoy_str = datetime.now().strftime("%Y-%m-%d")
+      ordenes_a_mostrar = []
+
+      # Filtro condicional: Si tiene visto bueno, solo mostrarse el mismo día de su emisión
       for index, row in df_mis_ordenes.iterrows():
-        ot_id = row["id"]
-        estado_ot = row["Estado"]
         h_conf = str(row["HoraConformidad"])
+        fecha_emision = str(row["Fecha"])
+        tiene_vb = h_conf != "--:--" and h_conf != ""
 
-        if h_conf != "--:--" and h_conf:
-          color_badge = "🟢 **[Visto Bueno Otorgado]**"
-          borde_markdown = (
-              ":green[**Orden Completada y Validada con Conformidad**]"
-          )
-        elif estado_ot == "Cerrada":
-          color_badge = "🟡 **[Cerrada - Pendiente de Visto Bueno]**"
-          borde_markdown = ":orange[**Atendida por Mantenimiento**]"
-        else:
-          color_badge = f"🔵 **[{estado_ot}]**"
-          borde_markdown = f"**Estado:** {estado_ot}"
+        if tiene_vb and fecha_emision != fecha_hoy_str:
+          # Omitir órdenes de días anteriores que ya tienen visto bueno
+          continue
+        ordenes_a_mostrar.append(row)
 
-        with st.expander(
-            f"[{row['NumOrden']}] Área: {row['Area']} | Equipo:"
-            f" {row['Equipo']} | {color_badge}"
-        ):
-          st.markdown(borde_markdown)
-          st.write(f"**Técnico Atendió:** {row['Tecnico']}")
-          st.write(f"**Descripción:** {row['Descripcion']}")
-          st.write(f"**Hora de Cierre:** {row['HoraCierre']}")
-          st.write(f"**Visto Bueno / Conformidad:** {h_conf}")
+      if not ordenes_a_mostrar:
+        st.info("No hay órdenes pendientes ni recientes para mostrar hoy.")
+      else:
+        for row in ordenes_a_mostrar:
+          ot_id = row["id"]
+          estado_ot = row["Estado"]
+          h_conf = str(row["HoraConformidad"])
+          calif_guardada = row.get("CalificacionServicio")
 
-          if estado_ot == "Cerrada" and (h_conf == "--:--" or not h_conf):
-            if st.button(
-                f"Dar Visto Bueno (Conformidad) - {row['NumOrden']}",
-                key=f"btn_conf_{ot_id}",
-            ):
-              hora_actual = datetime.now().strftime("%H:%M")
-              actualizar_conformidad_db(ot_id, hora_actual)
-              st.success(
-                  "✅ Visto bueno registrado correctamente a las"
-                  f" {hora_actual}."
-              )
-              st.rerun()
-          elif h_conf != "--:--" and h_conf:
-            st.success(f"✔️ Esta orden ya cuenta con visto bueno ({h_conf}).")
+          if h_conf != "--:--" and h_conf:
+            color_badge = "🟢 **[Visto Bueno Otorgado]**"
+            borde_markdown = (
+                ":green[**Orden Completada y Validada con Conformidad**]"
+            )
+          elif estado_ot == "Cerrada":
+            color_badge = "🟡 **[Cerrada - Pendiente de Visto Bueno]**"
+            borde_markdown = ":orange[**Atendida por Mantenimiento**]"
+          else:
+            color_badge = f"🔵 **[{estado_ot}]**"
+            borde_markdown = f"**Estado:** {estado_ot}"
+
+          with st.expander(
+              f"[{row['NumOrden']}] Área: {row['Area']} | Equipo:"
+              f" {row['Equipo']} | {color_badge}"
+          ):
+            st.markdown(borde_markdown)
+            st.write(f"**Técnico Atendió:** {row['Tecnico']}")
+            st.write(f"**Descripción:** {row['Descripcion']}")
+            st.write(f"**Hora de Cierre:** {row['HoraCierre']}")
+            st.write(f"**Visto Bueno / Conformidad:** {h_conf}")
+
+            if calif_guardada:
+              estrellas = "⭐" * int(calif_guardada)
+              st.write(f"**Calificación del Servicio:** {estrellas}")
+              if row.get("ComentarioCalificacion"):
+                st.write(
+                    f"**Comentarios:** {row.get('ComentarioCalificacion')}"
+                )
+
+            if estado_ot == "Cerrada" and (h_conf == "--:--" or not h_conf):
+              with st.form(f"form_conf_{ot_id}"):
+                st.markdown("#### 🌟 Evaluar Servicio y Dar Visto Bueno")
+                calif_sel = st.selectbox(
+                    "Calificación del Servicio de Mantenimiento",
+                    [
+                        5,
+                        4,
+                        3,
+                        2,
+                        1,
+                    ],
+                    format_func=lambda x: "⭐" * x
+                    + f" ({x} - {'Excelente' if x==5 else 'Muy Bueno' if x==4 else 'Regular' if x==3 else 'Malo' if x==2 else 'Muy Malo'})",
+                    key=f"sel_calif_{ot_id}",
+                )
+                comentario_ev = st.text_input(
+                    "Comentario opcional sobre el servicio",
+                    placeholder="Ej. Excelente atención y rapidez...",
+                    key=f"input_com_{ot_id}",
+                )
+
+                btn_enviar_conf = st.form_submit_button(
+                    "Confirmar Visto Bueno y Enviar Evaluación",
+                    use_container_width=True,
+                )
+
+                if btn_enviar_conf:
+                  hora_actual = datetime.now().strftime("%H:%M")
+                  actualizar_conformidad_con_evaluacion_db(
+                      ot_id, hora_actual, calif_sel, comentario_ev
+                  )
+                  st.success(
+                      "✅ Visto bueno y evaluación registrados correctamente a"
+                      f" las {hora_actual}."
+                  )
+                  st.rerun()
+            elif h_conf != "--:--" and h_conf:
+              st.success(f"✔️ Esta orden ya cuenta con visto bueno ({h_conf}).")
 
   # ---------------------------------------------------------
   # CATEGORÍA 2: TÉCNICO DE MANTENIMIENTO
@@ -559,18 +629,15 @@ else:
 
         # Barra lateral minimalista corregida
         if estado_actual_ot == "En Espera":
-          # AZUL: En espera (refacción o externo)
           estilo_tarjeta = "border-left: 5px solid #1c83e1; padding-left: 12px; margin-bottom: 12px;"
           badge_estado = "🔵 **En Espera**"
         elif estado_actual_ot == "Abierta" or esta_libre:
-          # ROJO: Abiertas o sin técnico asignado
           estilo_tarjeta = "border-left: 5px solid #ff4b4b; padding-left: 12px; margin-bottom: 12px;"
           badge_estado = "🔴 **Abierta / Sin Técnico**"
         else:
           estilo_tarjeta = "border-left: 5px solid #808080; padding-left: 12px; margin-bottom: 12px;"
           badge_estado = f"⚪ **{estado_actual_ot}**"
 
-        # Contenedor limpio con barra lateral de color
         with st.container():
           st.markdown(
               f"""
@@ -583,7 +650,6 @@ else:
               unsafe_allow_html=True,
           )
 
-          # Opciones de acción dentro de un expander limpio
           with st.expander(
               f"⚙️ Gestionar Orden [{row['NumOrden']}]", expanded=False
           ):
