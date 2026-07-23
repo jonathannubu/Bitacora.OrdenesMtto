@@ -472,19 +472,45 @@ else:
     )
 
     df_mis_ordenes = cargar_datos_db(
-        "SELECT Fecha, Turno, Tecnico, Area, Equipo, NumOrden, TipoMantenimiento,"
-        " HoraEmision, Estado, Descripcion FROM ordenes WHERE Departamento = ?"
-        " AND Estado IN ('Abierta', 'En Espera')",
+        "SELECT id, Fecha, Turno, Tecnico, Area, Equipo, NumOrden,"
+        " TipoMantenimiento, HoraEmision, HoraCierre, HoraConformidad, Estado,"
+        " Descripcion FROM ordenes WHERE Departamento = ?",
         params=(depto_actual,),
     )
 
     if df_mis_ordenes.empty:
-      st.info(
-          "No tienes órdenes abiertas ni en espera en este momento. Todas han"
-          " sido atendidas o cerradas."
-      )
+      st.info("No tienes órdenes registradas en este momento.")
     else:
-      st.dataframe(df_mis_ordenes, use_container_width=True, hide_index=True)
+      # Separar en vistas o mostrar expanders para que puedan dar conformidad si ya están cerradas/atendidas
+      for index, row in df_mis_ordenes.iterrows():
+        ot_id = row["id"]
+        estado_ot = row["Estado"]
+        h_conf = str(row["HoraConformidad"])
+
+        with st.expander(
+            f"[{row['NumOrden']}] Área: {row['Area']} | Equipo:"
+            f" {row['Equipo']} | Estado: **{estado_ot}**"
+        ):
+          st.write(f"**Técnico Atendió:** {row['Tecnico']}")
+          st.write(f"**Descripción:** {row['Descripcion']}")
+          st.write(f"**Hora de Cierre:** {row['HoraCierre']}")
+          st.write(f"**Visto Bueno / Conformidad:** {h_conf}")
+
+          # Si la orden está cerrada o lista y aún no tiene conformidad, mostrar botón para dar Visto Bueno
+          if estado_ot == "Cerrada" and (h_conf == "--:--" or not h_conf):
+            if st.button(
+                f"Dar Visto Bueno (Conformidad) - {row['NumOrden']}",
+                key=f"btn_conf_{ot_id}",
+            ):
+              hora_actual = datetime.now().strftime("%H:%M")
+              actualizar_conformidad_db(ot_id, hora_actual)
+              st.success(
+                  "✅ Visto bueno registrado correctamente a las"
+                  f" {hora_actual}."
+              )
+              st.rerun()
+          elif h_conf != "--:--" and h_conf:
+            st.success(f"✔️ Esta orden ya cuenta con visto bueno ({h_conf}).")
 
   # ---------------------------------------------------------
   # CATEGORÍA 2: TÉCNICO DE MANTENIMIENTO
