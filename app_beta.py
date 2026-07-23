@@ -316,64 +316,70 @@ if not st.session_state["sesion_activa"]:
   df_deptos_system = cargar_departamentos_df()
   df_tec_system = cargar_tecnicos_df()
 
-  with st.sidebar.form("form_login_global"):
-    if "Solicitante" in tipo_login:
-      usuario_sel = st.selectbox(
-          "Departamento", df_deptos_system["Departamento"]
-      )
-    elif "Técnico" in tipo_login:
-      usuario_sel = st.selectbox("Técnico", df_tec_system["Tecnico"])
-    else:
-      usuario_sel = "Acceso General"
-
-    pass_ingresada = st.text_input("Contraseña", type="password")
-    btn_entrar = st.form_submit_button("Iniciar Sesión", use_container_width=True)
-
-    if btn_entrar:
+  # Si el usuario selecciona Visualizador, le damos acceso inmediato sin formulario de contraseña
+  if "📊 Visualizador" in tipo_login:
+    if st.sidebar.button(
+        "Ingresar como Visualizador", use_container_width=True
+    ):
+      st.session_state["sesion_activa"] = True
+      st.session_state["rol_usuario"] = "Visualizador"
+      st.session_state["nombre_usuario"] = "Visualizador"
+      st.rerun()
+  else:
+    with st.sidebar.form("form_login_global"):
       if "Solicitante" in tipo_login:
-        match = df_deptos_system[
-            df_deptos_system["Departamento"] == usuario_sel
-        ]
-        if (
-            not match.empty
-            and str(match["Password"].values[0]).strip()
-            == pass_ingresada.strip().replace(".0", "")
-        ):
-          st.session_state["sesion_activa"] = True
-          st.session_state["rol_usuario"] = "Solicitante"
-          st.session_state["nombre_usuario"] = usuario_sel
-          st.rerun()
-        else:
-          st.error("Contraseña incorrecta.")
-
+        usuario_sel = st.selectbox(
+            "Departamento", df_deptos_system["Departamento"]
+        )
       elif "Técnico" in tipo_login:
-        match = df_tec_system[df_tec_system["Tecnico"] == usuario_sel]
-        if (
-            not match.empty
-            and str(match["Password"].values[0]).strip()
-            == pass_ingresada.strip().replace(".0", "")
-        ):
-          st.session_state["sesion_activa"] = True
-          st.session_state["rol_usuario"] = "Tecnico"
-          st.session_state["nombre_usuario"] = usuario_sel
-          st.rerun()
-        else:
-          st.error("Contraseña incorrecta.")
+        usuario_sel = st.selectbox("Técnico", df_tec_system["Tecnico"])
+      else:
+        usuario_sel = "Acceso General"
 
-      elif "Visualizador" in tipo_login:
-        st.session_state["sesion_activa"] = True
-        st.session_state["rol_usuario"] = "Visualizador"
-        st.session_state["nombre_usuario"] = "Visualizador"
-        st.rerun()
+      pass_ingresada = st.text_input("Contraseña", type="password")
+      btn_entrar = st.form_submit_button(
+          "Iniciar Sesión", use_container_width=True
+      )
 
-      elif "Administrador" in tipo_login:
-        if pass_ingresada.strip() == "avangardmtto22":
-          st.session_state["sesion_activa"] = True
-          st.session_state["rol_usuario"] = "Admin"
-          st.session_state["nombre_usuario"] = "Administrador"
-          st.rerun()
-        else:
-          st.error("Contraseña de administrador incorrecta.")
+      if btn_entrar:
+        if "Solicitante" in tipo_login:
+          match = df_deptos_system[
+              df_deptos_system["Departamento"] == usuario_sel
+          ]
+          if (
+              not match.empty
+              and str(match["Password"].values[0]).strip()
+              == pass_ingresada.strip().replace(".0", "")
+          ):
+            st.session_state["sesion_activa"] = True
+            st.session_state["rol_usuario"] = "Solicitante"
+            st.session_state["nombre_usuario"] = usuario_sel
+            st.rerun()
+          else:
+            st.error("Contraseña incorrecta.")
+
+        elif "Técnico" in tipo_login:
+          match = df_tec_system[df_tec_system["Tecnico"] == usuario_sel]
+          if (
+              not match.empty
+              and str(match["Password"].values[0]).strip()
+              == pass_ingresada.strip().replace(".0", "")
+          ):
+            st.session_state["sesion_activa"] = True
+            st.session_state["rol_usuario"] = "Tecnico"
+            st.session_state["nombre_usuario"] = usuario_sel
+            st.rerun()
+          else:
+            st.error("Contraseña incorrecta.")
+
+        elif "Administrador" in tipo_login:
+          if pass_ingresada.strip() == "avangardmtto22":
+            st.session_state["sesion_activa"] = True
+            st.session_state["rol_usuario"] = "Admin"
+            st.session_state["nombre_usuario"] = "Administrador"
+            st.rerun()
+          else:
+            st.error("Contraseña de administrador incorrecta.")
 else:
   st.sidebar.success(
       f"Sesión activa:\n**{st.session_state['nombre_usuario']}**"
@@ -731,7 +737,6 @@ else:
           if "Equipo" in df_f.columns and not df_f["Equipo"].empty:
             top_equipos = df_f["Equipo"].value_counts().reset_index()
             top_equipos.columns = ["Equipo", "Total Fallas"]
-            # Mostrar como tabla/lista ordenada limpia en lugar de gráfico
             st.dataframe(
                 top_equipos, use_container_width=True, hide_index=True
             )
