@@ -296,9 +296,9 @@ if menu == "Registrar Orden (Técnicos)":
 
     with col1:
       tecnico = st.selectbox("Técnico responsable", lista_tecnicos_activos)
-      area = st.selectbox("Área de la Planta", lista_areas_activas)
+      area = st.selectbox("Área", lista_areas_activas)
       departamento_solicitante = st.selectbox(
-          "Departamento Solicitante (OT)", lista_departamentos
+          "Departamento Solicitante", lista_departamentos
       )
       equipo = st.text_input(
           "Equipo intervenido", placeholder="Ej. Banda Transportadora 3"
@@ -337,8 +337,8 @@ if menu == "Registrar Orden (Técnicos)":
 
     st.markdown("---")
     st.markdown(
-        "🔐 **Validación de Identidad y Solicitud:** Ingresa tu contraseña de"
-        " técnico y la clave del departamento solicitante."
+        "🔐 **Validación de Identidad:** Ingresa tu contraseña de técnico y la"
+        " clave del departamento solicitante."
     )
     f_col1, f_col2 = st.columns(2)
 
@@ -352,7 +352,7 @@ if menu == "Registrar Orden (Técnicos)":
 
     with f_col2:
       pass_departamento = st.text_input(
-          "Contraseña del Depto. Solicitante",
+          "Contraseña de Depto. Solicitante",
           type="password",
           placeholder="Clave del departamento",
           key="pass_depto_form",
@@ -420,7 +420,7 @@ if menu == "Registrar Orden (Técnicos)":
             )
           elif match_dep.empty:
             mensaje_form_container.error(
-                "Error al identificar el departamento solicitante."
+                "Error al identificar al departamento solicitante."
             )
           else:
             pass_correcta_tec = str(match_tec["Password"].values[0]).strip()
