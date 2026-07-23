@@ -751,7 +751,12 @@ elif categoria_usuario == "📊 Visualizador / Gerencia":
   if df_all.empty:
     st.info("Aún no hay registros en la base de datos de pruebas.")
   else:
-    col1, col2, col3 = st.columns(3)
+    df_deptos_system = cargar_departamentos_df()
+    lista_deptos_filtro = ["Todos"] + list(
+        df_deptos_system["Departamento"].unique()
+    )
+
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
       fechas_disp = sorted(
           [str(f) for f in df_all["Fecha"].dropna().unique()], reverse=True
@@ -766,12 +771,16 @@ elif categoria_usuario == "📊 Visualizador / Gerencia":
       estado_sel = st.selectbox(
           "Filtrar por Estado", ["Todos", "Abierta", "En Espera", "Cerrada"]
       )
+    with col4:
+      depto_sel = st.selectbox("Filtrar por Departamento", lista_deptos_filtro)
 
     df_f = df_all[df_all["Fecha"].astype(str) == str(fecha_sel)]
     if turno_sel != "Todos":
       df_f = df_f[df_f["Turno"].astype(str) == str(turno_sel)]
     if estado_sel != "Todos":
       df_f = df_f[df_f["Estado"].astype(str) == str(estado_sel)]
+    if depto_sel != "Todos":
+      df_f = df_f[df_f["Departamento"].astype(str) == str(depto_sel)]
 
     st.markdown("---")
 
@@ -794,8 +803,6 @@ elif categoria_usuario == "📊 Visualizador / Gerencia":
       )
 
       st.markdown("### 📋 Detalle de Órdenes y Dar Conformidad")
-
-      df_deptos_system = cargar_departamentos_df()
 
       for index, row in df_f.iterrows():
         estado_con_actual = row["HoraConformidad"]
