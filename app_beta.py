@@ -8,6 +8,7 @@ import streamlit as st
 DB_FILE = "bitacora_beta.db"
 TECNICOS_FILE = "tecnicos_beta.csv"
 AREAS_FILE = "areas_beta.csv"
+DEPTOS_FILE = "departamentos_beta.csv"
 
 
 # --- CONFIGURACIÓN DE BASE DE DATOS (CERO PÉRDIDA DE DATOS) ---
@@ -187,6 +188,58 @@ def eliminar_tecnico(nombre_a_borrar):
   return True, "Técnico eliminado correctamente."
 
 
+# Gestión de Departamentos / Solicitantes (CSV auxiliar beta)
+def cargar_departamentos_df():
+  if os.path.exists(DEPTOS_FILE):
+    df_dep = pd.read_csv(DEPTOS_FILE, dtype=str)
+    df_dep["Departamento"] = (
+        df_dep["Departamento"].fillna("").astype(str).str.strip()
+    )
+    df_dep["Password"] = (
+        df_dep["Password"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .str.replace(r"\.0$", "", regex=True)
+    )
+    return df_dep
+  else:
+    df_dep = pd.DataFrame({
+        "Departamento": ["Acondicionado", "Producción"],
+        "Password": ["1111", "2222"],
+    })
+    df_dep.to_csv(DEPTOS_FILE, index=False)
+    return df_dep
+
+
+def agregar_o_actualizar_departamento(nombre, password):
+  df_dep = cargar_departamentos_df()
+  nombre = str(nombre).strip()
+  password = str(password).strip().replace(".0", "")
+  if not nombre or not password:
+    return False, "El departamento y la contraseña no pueden estar vacíos."
+  if nombre in df_dep["Departamento"].values:
+    df_dep.loc[df_dep["Departamento"] == nombre, "Password"] = password
+    mensaje = f"Contraseña actualizada para el departamento {nombre}."
+  else:
+    nuevo_row = pd.DataFrame(
+        {"Departamento": [nombre], "Password": [password]}
+    )
+    df_dep = pd.concat([df_dep, nuevo_row], ignore_index=True)
+    mensaje = f"Departamento {nombre} agregado exitosamente."
+  df_dep.to_csv(DEPTOS_FILE, index=False)
+  return True, mensaje
+
+
+def eliminar_departamento(nombre_a_borrar):
+  df_dep = cargar_departamentos_df()
+  if len(df_dep) <= 1:
+    return False, "Debes mantener al menos un departamento registrado."
+  df_dep = df_dep[df_dep["Departamento"] != str(nombre_a_borrar).strip()]
+  df_dep.to_csv(DEPTOS_FILE, index=False)
+  return True, "Departamento eliminado correctamente."
+
+
 # Gestión de Áreas (CSV auxiliar beta)
 def cargar_areas():
   if os.path.exists(AREAS_FILE):
@@ -266,33 +319,38 @@ st.sidebar.markdown("---")
 if categoria_usuario == "📝 Solicitante (Producción)":
   st.subheader("📝 Solicitar Orden de Mantenimiento (Helpdesk)")
   st.markdown(
-      "Reporta una falla o necesidad de ajuste. El equipo técnico será"
-      " notificado de inmediato."
+      "Reporta una falla o necesidad de ajuste. Ingresa tu contraseña de"
+      " departamento autorizada."
   )
 
   if st.session_state["mensaje_alerta"]:
     st.success(st.session_state["mensaje_alerta"])
     st.session_state["mensaje_alerta"] = None
 
-  lista_departamentos = [
-      "Selecciona un departamento...",
-      "Acondicionado",
-      "Producción",
-  ]
+  df_deptos_system = cargar_departamentos_df()
+  lista_departamentos = ["Selecciona un departamento..."] + list(
+      df_deptos_system["Departamento"]
+  )
   lista_areas = ["Selecciona un área..."] + cargar_areas()
 
   with st.form("form_solicitud_produccion"):
     col1, col2 = st.columns(2)
     with col1:
-      depto_sol = st.selectbox("Departamento que solicita", lista_departamentos)
-      area_sol = st.selectbox("Área (configurada por admin)", lista_areas)
-    with col2:
-      equipo_sol = st.text_input(
-          "Equipo o Máquina", placeholder="Ej. Línea 2 - Envasadora"
+      depto_sol = st.selectbox(
+          "Departamento que solicita", lista_departamentos
       )
+      pass_depto_input = st.text_input(
+          "Contraseña de Departamento", type="password"
+      )
+    with col2:
+      area_sol = st.selectbox("Área (configurada por admin)", lista_areas)
       turno_sol = st.selectbox(
           "Turno Actual", ["Matutino", "Vespertino", "Nocturno"]
       )
+
+    equipo_sol = st.text_input(
+        "Equipo o Máquina", placeholder="Ej. Línea 2 - Envasadora"
+    )
 
     num_ot_generado = f"OT-{datetime.now().strftime('%d%H%M%S')}"
     st.info(f"📌 Folio Asignado Automáticamente: **{num_ot_generado}**")
@@ -311,36 +369,50 @@ if categoria_usuario == "📝 Solicitante (Producción)":
     if submitted_sol:
       if depto_sol == "Selecciona un departamento...":
         st.error("Selecciona el departamento que solicita.")
+      elif not pass_depto_input:
+        st.error("Ingresa la contraseña de tu departamento.")
       elif area_sol == "Selecciona un área...":
         st.error("Selecciona el área correspondiente.")
       elif not equipo_sol or not desc_sol:
         st.warning("Completa el equipo y la descripción de la falla.")
       else:
-        nueva_ot = {
-            "Fecha": datetime.now().strftime("%Y-%m-%d"),
-            "Turno": turno_sol,
-            "Tecnico": "Pendiente de Asignar",
-            "Departamento": depto_sol,
-            "Area": area_sol,
-            "Equipo": equipo_sol,
-            "NumOrden": num_ot_generado,
-            "TipoMantenimiento": "Correctivo",
-            "HoraEmision": datetime.now().strftime("%H:%M"),
-            "HoraRecepcion": "--:--",
-            "HoraCierre": "--:--",
-            "HoraConformidad": "--:--",
-            "MinutosEspera": 0,
-            "MinutosTrabajo": 0,
-            "MinutosTotalOT": 0,
-            "Descripcion": desc_sol,
-            "Estado": "Abierta",
-        }
-        guardar_nueva_solicitud(nueva_ot)
-        st.session_state["mensaje_alerta"] = (
-            f"✅ ¡Solicitud {num_ot_generado} enviada con éxito! Mantenimiento"
-            " ha sido alertado."
-        )
-        st.rerun()
+        match_dep = df_deptos_system[
+            df_deptos_system["Departamento"] == depto_sol.strip()
+        ]
+        if not match_dep.empty:
+          pass_correcta_dep = str(match_dep["Password"].values[0]).strip()
+          pass_ingresada_dep = str(pass_depto_input).strip().replace(".0", "")
+
+          if pass_ingresada_dep == pass_correcta_dep:
+            nueva_ot = {
+                "Fecha": datetime.now().strftime("%Y-%m-%d"),
+                "Turno": turno_sol,
+                "Tecnico": "Pendiente de Asignar",
+                "Departamento": depto_sol,
+                "Area": area_sol,
+                "Equipo": equipo_sol,
+                "NumOrden": num_ot_generado,
+                "TipoMantenimiento": "Correctivo",
+                "HoraEmision": datetime.now().strftime("%H:%M"),
+                "HoraRecepcion": "--:--",
+                "HoraCierre": "--:--",
+                "HoraConformidad": "--:--",
+                "MinutosEspera": 0,
+                "MinutosTrabajo": 0,
+                "MinutosTotalOT": 0,
+                "Descripcion": desc_sol,
+                "Estado": "Abierta",
+            }
+            guardar_nueva_solicitud(nueva_ot)
+            st.session_state["mensaje_alerta"] = (
+                f"✅ ¡Solicitud {num_ot_generado} enviada con éxito! Mantenimiento"
+                " ha sido alertado."
+            )
+            st.rerun()
+          else:
+            st.error("Contraseña de departamento incorrecta.")
+        else:
+          st.error("Departamento no encontrado.")
 
 # ---------------------------------------------------------
 # CATEGORÍA 2: TÉCNICO DE MANTENIMIENTO
@@ -619,8 +691,8 @@ elif categoria_usuario == "📊 Visualizador / Gerencia":
 elif categoria_usuario == "🛠️ Administrador (Gestión Total)":
   st.subheader("🛠️ Panel de Administración del Sistema")
   st.markdown(
-      "Gestiona los técnicos autorizados, las áreas/naves y la base de"
-      " datos."
+      "Gestiona los técnicos autorizados, los departamentos solicitantes, las"
+      " áreas y la base de datos."
   )
 
   pass_gerencia = st.text_input(
@@ -629,7 +701,13 @@ elif categoria_usuario == "🛠️ Administrador (Gestión Total)":
 
   if pass_gerencia.strip() == "avangardmtto22":
     st.success("Acceso concedido.")
-    tab_g1, tab_g2 = st.tabs(["👥 Gestión de Técnicos", "🏭 Gestión de Áreas"])
+    tab_g1, tab_g2, tab_g3 = st.tabs(
+        [
+            "👥 Gestión de Técnicos",
+            "🏢 Gestión de Departamentos",
+            "🏭 Gestión de Áreas",
+        ]
+    )
 
     with tab_g1:
       st.markdown("#### Técnicos Registrados")
@@ -667,6 +745,41 @@ elif categoria_usuario == "🛠️ Administrador (Gestión Total)":
           st.warning("Selecciona un técnico válido.")
 
     with tab_g2:
+      st.markdown("#### Departamentos Solicitantes Registrados")
+      df_d = cargar_departamentos_df()
+      st.dataframe(df_d, use_container_width=True)
+
+      st.markdown("#### Agregar o Actualizar Departamento")
+      n_dep = st.text_input("Nombre del Departamento (ej. Acondicionado)")
+      p_dep = st.text_input(
+          "Contraseña del Departamento", type="password", key="p_dep_nuevo"
+      )
+      if st.button("Guardar / Actualizar Departamento"):
+        ex, msg = agregar_o_actualizar_departamento(n_dep, p_dep)
+        if ex:
+          st.success(msg)
+          st.rerun()
+        else:
+          st.error(msg)
+
+      st.markdown("---")
+      st.markdown("#### Eliminar Departamento")
+      dep_a_borrar = st.selectbox(
+          "Selecciona departamento a eliminar",
+          ["Selecciona..."] + list(df_d["Departamento"]),
+      )
+      if st.button("Eliminar Departamento"):
+        if dep_a_borrar != "Selecciona...":
+          ex, msg = eliminar_departamento(dep_a_borrar)
+          if ex:
+            st.success(msg)
+            st.rerun()
+          else:
+            st.error(msg)
+        else:
+          st.warning("Selecciona un departamento válido.")
+
+    with tab_g3:
       st.markdown("#### Áreas / Naves Registradas")
       lista_areas_actuales = cargar_areas()
 
@@ -681,7 +794,7 @@ elif categoria_usuario == "🛠️ Administrador (Gestión Total)":
       n_area = st.text_input("Nombre de la Nueva Área o Nave")
       if st.button("Guardar Nueva Área"):
         ex, msg = agregar_area(n_area)
-        if exito := ex:
+        if ex:
           st.success(msg)
           st.rerun()
         else:
