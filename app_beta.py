@@ -455,8 +455,19 @@ elif categoria_usuario == "👷‍♂️ Órdenes de trabajo Abiertas y en Esper
 
     for index, row in df_pendientes.iterrows():
       ot_id = row["id"]
-      estat_atencion = st.session_state["ordenes_en_atencion"].get(ot_id, None)
       estado_actual_ot = row["Estado"]
+      tec_en_bd = str(row["Tecnico"]).strip()
+
+      # Verificamos si el técnico actual en BD es un técnico real válido registrado
+      tec_es_valido = (
+          tec_en_bd in df_tec_system["Tecnico"].values
+          and tec_en_bd != "Pendiente de Asignar"
+      )
+
+      # Si está en la sesión o en la BD con un técnico válido, consideramos que ya está en atención
+      atendiendo_activo = st.session_state["ordenes_en_atencion"].get(
+          ot_id, tec_en_bd if tec_es_valido else None
+      )
 
       etiqueta_exp = (
           f"🔔 [{row['NumOrden']}] Depto: {row.get('Departamento', 'N/D')} |"
@@ -466,7 +477,7 @@ elif categoria_usuario == "👷‍♂️ Órdenes de trabajo Abiertas y en Esper
 
       with st.expander(etiqueta_exp):
         st.write(f"**Descripción:** {row['Descripcion']}")
-        st.write(f"**Técnico Asignado:** {row['Tecnico']}")
+        st.write(f"**Técnico Registrado:** {row['Tecnico']}")
 
         if estado_actual_ot == "En Espera":
           st.error(
@@ -474,7 +485,8 @@ elif categoria_usuario == "👷‍♂️ Órdenes de trabajo Abiertas y en Esper
               f" {row['Descripcion']}"
           )
 
-        if not estat_atencion and estado_actual_ot == "Abierta":
+        # FASE 1: SI NO HAY TÉCNICO VÁLIDO ASIGNADO, MOSTRAR FORMULARIO PARA TOMARLA
+        if not tec_es_valido and not atendiendo_activo:
           with st.form(f"form_responsable_{ot_id}"):
             st.markdown("### 🛠️ Asignar Responsable de Atención")
             col_r1, col_r2 = st.columns(2)
@@ -513,6 +525,24 @@ elif categoria_usuario == "👷‍♂️ Órdenes de trabajo Abiertas y en Esper
                     st.session_state["ordenes_en_atencion"][ot_id] = (
                         tec_elegido
                     )
+                    # Actualizamos también en la BD para que quede vinculado el técnico que la tomó
+                    datos_toma = {
+                        "Tecnico": tec_elegido,
+                        "TipoMantenimiento": row["TipoMantenimiento"],
+                        "HoraRecepcion": (
+                            row["HoraEmision"]
+                            if row["HoraEmision"] != "--:--"
+                            else datetime.now().strftime("%H:%M")
+                        ),
+                        "HoraCierre": row["HoraCierre"],
+                        "HoraConformidad": row["HoraConformidad"],
+                        "MinutosEspera": row["MinutosEspera"],
+                        "MinutosTrabajo": row["MinutosTrabajo"],
+                        "MinutosTotalOT": row["MinutosTotalOT"],
+                        "Descripcion": row["Descripcion"],
+                        "Estado": row["Estado"],
+                    }
+                    actualizar_orden_db(ot_id, datos_toma)
                     st.success("✅ ¡Asignado correctamente! Menú desplegado.")
                     st.rerun()
                   else:
@@ -520,20 +550,13 @@ elif categoria_usuario == "👷‍♂️ Órdenes de trabajo Abiertas y en Esper
                 else:
                   st.error("Técnico no encontrado.")
 
+        # FASE 2: YA HAY UN TÉCNICO VÁLIDO ATENDIENDO
         else:
           tec_activo = (
-              estat_atencion
-              if estat_atencion
-              else (
-                  row["Tecnico"]
-                  if row["Tecnico"] != "Pendiente de Asignar"
-                  and row["Tecnico"] != "Pendiente"
-                  else "Técnico"
-              )
+              atendiendo_activo
+              if atendiendo_activo and atendiendo_activo != "Pendiente de Asignar"
+              else tec_en_bd
           )
-          if not estat_atencion:
-            st.session_state["ordenes_en_atencion"][ot_id] = tec_activo
-
           st.success(f"👤 Técnico responsable actual: **{tec_activo}**")
 
           with st.form(f"form_cierre_{ot_id}"):
@@ -594,6 +617,23 @@ elif categoria_usuario == "👷‍♂️ Órdenes de trabajo Abiertas y en Esper
                     if accion_orden == "Cancelar / Liberar Atención":
                       if ot_id in st.session_state["ordenes_en_atencion"]:
                         del st.session_state["ordenes_en_atencion"][ot_id]
+                      # Liberamos técnico en BD regresando a Pendiente de Asignar
+                      datos_liberar = {
+                          "Tecnico": "Pendiente de Asignar",
+                          "TipoMantenimiento": row["TipoMantenimiento"],
+                          "HoraRecepcion": row["HoraRecepcion"],
+                          "HoraCierre": row["HoraCierre"],
+                          "HoraConformidad": row["HoraConformidad"],
+                          "MinutosEspera": row["MinutosEspera"],
+                          "MinutosTrabajo": row["MinutosTrabajo"],
+                          "MinutosTotalOT": row["MinutosTotalOT"],
+                          "Descripcion": row["Descripcion"],
+                          "Estado": "Abierta",
+                      }
+                      actualizar_orden_db(ot_id, datos_liberar)
+                      st.session_state["mensaje_alerta"] = (
+                          "ℹ️ Atención cancelada. Orden devuelta a pendientes."
+                      )
                       st.rerun()
 
                     elif "Poner en Espera" in accion_orden:
@@ -604,7 +644,7 @@ elif categoria_usuario == "👷‍♂️ Órdenes de trabajo Abiertas y en Esper
                       )
                       nota_final_espera = motivo_espera + desc_tec
 
-                      # Al poner en espera, liberamos al técnico regresando el campo a 'Pendiente de Asignar'
+                      # Al poner en espera, liberamos al técnico regresando el campo de técnico estrictamente a 'Pendiente de Asignar'
                       datos_espera = {
                           "Tecnico": "Pendiente de Asignar",
                           "TipoMantenimiento": clasificacion_trabajo,
@@ -627,7 +667,7 @@ elif categoria_usuario == "👷‍♂️ Órdenes de trabajo Abiertas y en Esper
 
                       st.session_state["mensaje_alerta"] = (
                           f"⚠️ Orden {row['NumOrden']} marcada como En"
-                          f" Espera. Te has liberado de la asignación."
+                          f" Espera. Técnico liberado correctamente."
                       )
                       st.rerun()
 
