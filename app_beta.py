@@ -26,7 +26,7 @@ def inicializar_bd():
                 Turno TEXT,
                 Tecnico TEXT,
                 Departamento TEXT,
-                Area TEXT,
+                AreaLinea TEXT,
                 Equipo TEXT,
                 NumOrden TEXT,
                 TipoMantenimiento TEXT,
@@ -63,6 +63,7 @@ def inicializar_bd():
             ("FechaCierre", "TEXT"),
             ("DescripcionFalla", "TEXT"),
             ("TrabajoRealizado", "TEXT"),
+            ("AreaLinea", "TEXT"),
             ("EvalEPP", "TEXT"),
             ("EvalAreaLimpia", "TEXT"),
             ("EvalActitud", "TEXT"),
@@ -94,7 +95,7 @@ def obtener_siguiente_folio():
         siguiente = (res[0] if res else 0) + 1
         cursor.execute("UPDATE contador_folios SET ultimo_folio = ? WHERE id = 1", (siguiente,))
         conn.commit()
-    return f"OT-{siguiente:06d}"
+    return f"{siguiente:06d}"
 
 
 def cargar_datos_db(query="SELECT * FROM ordenes", params=()):
@@ -112,7 +113,7 @@ def guardar_nueva_solicitud(datos):
         cursor.execute(
             """
             INSERT INTO ordenes (
-                Fecha, Turno, Tecnico, Departamento, Area, Equipo, NumOrden, TipoMantenimiento, 
+                Fecha, Turno, Tecnico, Departamento, AreaLinea, Equipo, NumOrden, TipoMantenimiento, 
                 HoraEmision, HoraRecepcion, HoraCierre, FechaCierre, HoraConformidad, 
                 MinutosEspera, MinutosTrabajo, MinutosTotalOT, DescripcionFalla, TrabajoRealizado, Estado
             )
@@ -123,7 +124,7 @@ def guardar_nueva_solicitud(datos):
                 datos["Turno"],
                 datos["Tecnico"],
                 datos["Departamento"],
-                datos["Area"],
+                datos["AreaLinea"],
                 datos["Equipo"],
                 datos["NumOrden"],
                 datos["TipoMantenimiento"],
@@ -219,7 +220,7 @@ def generar_pdf_orden(row):
     pdf.cell(
         0,
         6,
-        f"Fecha de Emisión: {row.get('Fecha', '')} | Folio: {row.get('NumOrden', '')}",
+        f"Fecha de Emisión: {row.get('Fecha', '')} | Folio: OT-{row.get('NumOrden', '')}",
         new_x="LMARGIN",
         new_y="NEXT",
         align="C",
@@ -240,7 +241,7 @@ def generar_pdf_orden(row):
         new_y="TOP",
     )
     pdf.cell(
-        col_w, 6, f"Área / Línea: {row.get('Area', '')}", new_x="LMARGIN", new_y="NEXT"
+        col_w, 6, f"Área / Línea: {row.get('AreaLinea', '')}", new_x="LMARGIN", new_y="NEXT"
     )
 
     pdf.cell(
@@ -668,7 +669,7 @@ else:
             )
 
             num_ot_generado = obtener_siguiente_folio()
-            st.info(f"📌 Folio Asignado Automáticamente: **{num_ot_generado}**")
+            st.info(f"📌 Folio Asignado Automáticamente: **OT-{num_ot_generado}**")
 
             desc_sol = st.text_area(
                 "Descripción de la Falla",
@@ -692,7 +693,7 @@ else:
                         "Turno": turno_sol,
                         "Tecnico": "Pendiente de Asignar",
                         "Departamento": depto_actual,
-                        "Area": area_sol,
+                        "AreaLinea": area_sol,
                         "Equipo": equipo_sol,
                         "NumOrden": num_ot_generado,
                         "TipoMantenimiento": "Correctivo",
@@ -709,7 +710,7 @@ else:
                         "Estado": "Abierta",
                     }
                     guardar_nueva_solicitud(nueva_ot)
-                    st.success(f"✅ ¡Solicitud {num_ot_generado} enviada con éxito!")
+                    st.success(f"✅ ¡Solicitud OT-{num_ot_generado} enviada con éxito!")
 
         st.markdown("---")
         st.subheader(f"📋 Mis Solicitudes ({depto_actual})")
@@ -725,7 +726,7 @@ else:
                     [
                         "NumOrden",
                         "Fecha",
-                        "Area",
+                        "AreaLinea",
                         "Equipo",
                         "Estado",
                         "Tecnico",
@@ -734,7 +735,6 @@ else:
                 use_container_width=True,
             )
 
-            # Sección para dar conformidad si la OT está lista
             ots_pend_conf = df_mis_ots[
                 df_mis_ots["Estado"].isin(["Atendida", "Completada"])
             ]
@@ -751,7 +751,7 @@ else:
                 ].iloc[0]
 
                 with st.form(f"form_conf_{folio_conf}"):
-                    st.write(f"Evaluando orden: **{folio_conf}**")
+                    st.write(f"Evaluando orden: **OT-{folio_conf}**")
                     ev_epp = st.selectbox(
                         "¿Utilizó equipo de protección personal (EPP)?",
                         ["Sí", "No"],
@@ -792,7 +792,6 @@ else:
                             evals,
                             comentario_eval,
                         )
-                        # Marcar estado como Cerrada definitiva
                         with sqlite3.connect(DB_FILE) as conn:
                             cursor = conn.cursor()
                             cursor.execute(
@@ -832,7 +831,7 @@ else:
                 st.markdown(
                     f"""
                     <div class="{estado_clase}">
-                        <b>Folio:</b> {row['NumOrden']} | <b>Área:</b> {row['Area']} | <b>Equipo:</b> {row['Equipo']}<br>
+                        <b>Folio:</b> OT-{row['NumOrden']} | <b>Área/Línea:</b> {row['AreaLinea']} | <b>Equipo:</b> {row['Equipo']}<br>
                         <b>Descripción:</b> {row['DescripcionFalla']}<br>
                         <b>Estado actual:</b> {row['Estado']} | <b>Técnico asignado:</b> {row['Tecnico']}
                     </div>
@@ -841,7 +840,7 @@ else:
                 )
 
                 with st.expander(
-                    f"Atender / Editar Orden #{row['NumOrden']}"
+                    f"Atender / Editar Orden #OT-{row['NumOrden']}"
                 ):
                     with st.form(f"form_atender_{row['id']}"):
                         tec_asignado = st.text_input(
@@ -925,8 +924,7 @@ else:
                             "Guardar Avances Técnicos"
                         )
                         if btn_guardar_tec:
-                            # Calcular tiempos aproximados
-                            min_esp = 15  # Estimado por defecto o cálculo
+                            min_esp = 15
                             min_trab = 45
                             min_tot = min_esp + min_trab
 
@@ -945,7 +943,7 @@ else:
                             }
                             actualizar_orden_db(row["id"], datos_act)
                             st.success(
-                                f"✅ ¡Orden {row['NumOrden']} actualizada con"
+                                f"✅ ¡Orden OT-{row['NumOrden']} actualizada con"
                                 " éxito!"
                             )
                             st.rerun()
@@ -1017,9 +1015,9 @@ else:
                 row_sel = df_todas[df_todas["NumOrden"] == folio_sel].iloc[0]
                 pdf_bytes = generar_pdf_orden(row_sel)
                 st.download_button(
-                    label=f"📥 Descargar PDF de la Orden {folio_sel}",
+                    label=f"📥 Descargar PDF de la Orden OT-{folio_sel}",
                     data=pdf_bytes,
-                    file_name=f"Orden_{folio_sel}.pdf",
+                    file_name=f"Orden_OT-{folio_sel}.pdf",
                     mime="application/pdf",
                 )
 
@@ -1058,19 +1056,19 @@ else:
                     df_admin["NumOrden"] == folio_a_borrar
                 ].iloc[0]
                 st.info(
-                    f"Información de la Orden seleccionada: **Folio {row_borrar['NumOrden']}** |"
-                    f" **Área:** {row_borrar['Area']} | **Equipo:**"
+                    f"Información de la Orden seleccionada: **Folio OT-{row_borrar['NumOrden']}** |"
+                    f" **Área/Línea:** {row_borrar['AreaLinea']} | **Equipo:**"
                     f" {row_borrar['Equipo']} | **Estado:**"
                     f" {row_borrar['Estado']}"
                 )
 
                 if st.button(
-                    f"❌ Eliminar Permanentemente la Orden {folio_a_borrar}",
+                    f"❌ Eliminar Permanentemente la Orden OT-{folio_a_borrar}",
                     type="primary",
                 ):
                     eliminar_orden_db(row_borrar["id"])
                     st.success(
-                        f"✅ Orden {folio_a_borrar} eliminada correctamente de la"
+                        f"✅ Orden OT-{folio_a_borrar} eliminada correctamente de la"
                         " base de datos."
                     )
                     st.rerun()
