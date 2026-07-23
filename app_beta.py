@@ -458,13 +458,11 @@ elif categoria_usuario == "👷‍♂️ Órdenes de trabajo Abiertas y en Esper
       estado_actual_ot = row["Estado"]
       tec_en_bd = str(row["Tecnico"]).strip()
 
-      # Verificamos si el técnico actual en BD es un técnico real válido registrado
       tec_es_valido = (
           tec_en_bd in df_tec_system["Tecnico"].values
           and tec_en_bd != "Pendiente de Asignar"
       )
 
-      # Si está en la sesión o en la BD con un técnico válido, consideramos que ya está en atención
       atendiendo_activo = st.session_state["ordenes_en_atencion"].get(
           ot_id, tec_en_bd if tec_es_valido else None
       )
@@ -485,7 +483,6 @@ elif categoria_usuario == "👷‍♂️ Órdenes de trabajo Abiertas y en Esper
               f" {row['Descripcion']}"
           )
 
-        # FASE 1: SI NO HAY TÉCNICO VÁLIDO ASIGNADO, MOSTRAR FORMULARIO PARA TOMARLA
         if not tec_es_valido and not atendiendo_activo:
           with st.form(f"form_responsable_{ot_id}"):
             st.markdown("### 🛠️ Asignar Responsable de Atención")
@@ -525,7 +522,6 @@ elif categoria_usuario == "👷‍♂️ Órdenes de trabajo Abiertas y en Esper
                     st.session_state["ordenes_en_atencion"][ot_id] = (
                         tec_elegido
                     )
-                    # Actualizamos también en la BD para que quede vinculado el técnico que la tomó
                     datos_toma = {
                         "Tecnico": tec_elegido,
                         "TipoMantenimiento": row["TipoMantenimiento"],
@@ -549,8 +545,6 @@ elif categoria_usuario == "👷‍♂️ Órdenes de trabajo Abiertas y en Esper
                     st.error("Contraseña incorrecta.")
                 else:
                   st.error("Técnico no encontrado.")
-
-        # FASE 2: YA HAY UN TÉCNICO VÁLIDO ATENDIENDO
         else:
           tec_activo = (
               atendiendo_activo
@@ -617,7 +611,6 @@ elif categoria_usuario == "👷‍♂️ Órdenes de trabajo Abiertas y en Esper
                     if accion_orden == "Cancelar / Liberar Atención":
                       if ot_id in st.session_state["ordenes_en_atencion"]:
                         del st.session_state["ordenes_en_atencion"][ot_id]
-                      # Liberamos técnico en BD regresando a Pendiente de Asignar
                       datos_liberar = {
                           "Tecnico": "Pendiente de Asignar",
                           "TipoMantenimiento": row["TipoMantenimiento"],
@@ -644,7 +637,6 @@ elif categoria_usuario == "👷‍♂️ Órdenes de trabajo Abiertas y en Esper
                       )
                       nota_final_espera = motivo_espera + desc_tec
 
-                      # Al poner en espera, liberamos al técnico regresando el campo de técnico estrictamente a 'Pendiente de Asignar'
                       datos_espera = {
                           "Tecnico": "Pendiente de Asignar",
                           "TipoMantenimiento": clasificacion_trabajo,
@@ -711,7 +703,7 @@ elif categoria_usuario == "👷‍♂️ Órdenes de trabajo Abiertas y en Esper
                         )
 
                         datos_actualizados = {
-                            "Tecnico": tec_activo,  # Guardamos quién cerró la orden
+                            "Tecnico": tec_activo,
                             "TipoMantenimiento": clasificacion_trabajo,
                             "HoraRecepcion": h_rec,
                             "HoraCierre": h_cie,
@@ -803,11 +795,13 @@ elif categoria_usuario == "📊 Visualizador / Gerencia":
 
       st.markdown("### 📋 Detalle de Órdenes y Dar Conformidad")
 
+      df_deptos_system = cargar_departamentos_df()
+
       for index, row in df_f.iterrows():
         estado_con_actual = row["HoraConformidad"]
         ya_conforme = estado_con_actual != "--:--"
         depto_txt = (
-            row["Departamento"]
+            str(row["Departamento"]).strip()
             if "Departamento" in row and pd.notna(row["Departamento"])
             else "N/D"
         )
@@ -826,26 +820,50 @@ elif categoria_usuario == "📊 Visualizador / Gerencia":
                   "✅ Dar Visto Bueno / Conformidad al Trabajo Realizado",
                   value=ya_conforme,
               )
+              pass_depto_conf = st.text_input(
+                  f"🔒 Contraseña del departamento solicitante ({depto_txt}):",
+                  type="password",
+                  key=f"pass_conf_depto_{row['id']}",
+              )
               btn_guardar_conf = st.form_submit_button(
                   "Guardar Conformidad del Solicitante"
               )
 
               if btn_guardar_conf:
-                if check_conf:
-                  hora_conf_actual = datetime.now().strftime("%H:%M")
-                  actualizar_conformidad_db(row["id"], hora_conf_actual)
-                  st.session_state["mensaje_alerta"] = (
-                      f"✅ Conformidad registrada para la orden"
-                      f" {row['NumOrden']}."
-                  )
-                  st.rerun()
+                match_dep = df_deptos_system[
+                    df_deptos_system["Departamento"] == depto_txt
+                ]
+                if match_dep.empty:
+                  st.error(f"El departamento '{depto_txt}' no está registrado.")
                 else:
-                  actualizar_conformidad_db(row["id"], "--:--")
-                  st.session_state["mensaje_alerta"] = (
-                      f"ℹ️ Se removió la conformidad de la orden"
-                      f" {row['NumOrden']}."
+                  pass_correcta_dep = str(
+                      match_dep["Password"].values[0]
+                  ).strip()
+                  pass_ingresada_dep = str(pass_depto_conf).strip().replace(
+                      ".0", ""
                   )
-                  st.rerun()
+
+                  if pass_ingresada_dep != pass_correcta_dep:
+                    st.error(
+                        f"Contraseña incorrecta para el departamento"
+                        f" '{depto_txt}'."
+                    )
+                  else:
+                    if check_conf:
+                      hora_conf_actual = datetime.now().strftime("%H:%M")
+                      actualizar_conformidad_db(row["id"], hora_conf_actual)
+                      st.session_state["mensaje_alerta"] = (
+                          f"✅ Conformidad registrada correctamente por el"
+                          f" departamento {depto_txt}."
+                      )
+                      st.rerun()
+                    else:
+                      actualizar_conformidad_db(row["id"], "--:--")
+                      st.session_state["mensaje_alerta"] = (
+                          f"ℹ️ Se removió la conformidad de la orden"
+                          f" {row['NumOrden']}."
+                      )
+                      st.rerun()
           else:
             st.info(
                 f"La orden se encuentra en estado: **{row['Estado']}**. La"
