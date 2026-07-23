@@ -31,11 +31,13 @@ def inicializar_bd():
             HoraEmision TEXT,
             HoraRecepcion TEXT,
             HoraCierre TEXT,
+            FechaCierre TEXT,
             HoraConformidad TEXT,
             MinutosEspera INTEGER,
             MinutosTrabajo INTEGER,
             MinutosTotalOT INTEGER,
-            Descripcion TEXT,
+            DescripcionFalla TEXT,
+            TrabajoRealizado TEXT,
             Estado TEXT,
             EvalEPP TEXT,
             EvalAreaLimpia TEXT,
@@ -45,19 +47,31 @@ def inicializar_bd():
             ComentarioCalificacion TEXT
         )
     """)
-  # Compatibilidad con bases de datos existentes si faltan las columnas de evaluación
-  for col in [
-      "EvalEPP",
-      "EvalAreaLimpia",
-      "EvalActitud",
-      "EvalRecomendacion",
-      "EvalCausa",
-      "ComentarioCalificacion",
-  ]:
+
+  columnas_requeridas = [
+      ("FechaCierre", "TEXT"),
+      ("DescripcionFalla", "TEXT"),
+      ("TrabajoRealizado", "TEXT"),
+      ("EvalEPP", "TEXT"),
+      ("EvalAreaLimpia", "TEXT"),
+      ("EvalActitud", "TEXT"),
+      ("EvalRecomendacion", "TEXT"),
+      ("EvalCausa", "TEXT"),
+      ("ComentarioCalificacion", "TEXT"),
+  ]
+
+  for col_nombre, col_tipo in columnas_requeridas:
     try:
-      cursor.execute(f"ALTER TABLE ordenes ADD COLUMN {col} TEXT")
+      cursor.execute(f"ALTER TABLE ordenes ADD COLUMN {col_nombre} {col_tipo}")
     except sqlite3.OperationalError:
       pass
+
+  try:
+    cursor.execute(
+        "UPDATE ordenes SET DescripcionFalla = Descripcion WHERE (DescripcionFalla IS NULL OR DescripcionFalla = '') AND Descripcion IS NOT NULL"
+    )
+  except sqlite3.OperationalError:
+    pass
 
   conn.commit()
   conn.close()
@@ -81,10 +95,10 @@ def guardar_nueva_solicitud(datos):
       """
         INSERT INTO ordenes (
             Fecha, Turno, Tecnico, Departamento, Area, Equipo, NumOrden, TipoMantenimiento, 
-            HoraEmision, HoraRecepcion, HoraCierre, HoraConformidad, 
-            MinutosEspera, MinutosTrabajo, MinutosTotalOT, Descripcion, Estado
+            HoraEmision, HoraRecepcion, HoraCierre, FechaCierre, HoraConformidad, 
+            MinutosEspera, MinutosTrabajo, MinutosTotalOT, DescripcionFalla, TrabajoRealizado, Estado
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """,
       (
           datos["Fecha"],
@@ -98,11 +112,13 @@ def guardar_nueva_solicitud(datos):
           datos["HoraEmision"],
           datos["HoraRecepcion"],
           datos["HoraCierre"],
+          datos["FechaCierre"],
           datos["HoraConformidad"],
           datos["MinutosEspera"],
           datos["MinutosTrabajo"],
           datos["MinutosTotalOT"],
-          datos["Descripcion"],
+          datos["DescripcionFalla"],
+          datos["TrabajoRealizado"],
           datos["Estado"],
       ),
   )
@@ -115,8 +131,8 @@ def actualizar_orden_db(id_orden, datos):
   cursor = conn.cursor()
   cursor.execute(
       """
-        UPDATE ordenes SET Tecnico=?, TipoMantenimiento=?, HoraRecepcion=?, HoraCierre=?, HoraConformidad=?, 
-                           MinutosEspera=?, MinutosTrabajo=?, MinutosTotalOT=?, Descripcion=?, Estado=?
+        UPDATE ordenes SET Tecnico=?, TipoMantenimiento=?, HoraRecepcion=?, HoraCierre=?, FechaCierre=?, HoraConformidad=?, 
+                           MinutosEspera=?, MinutosTrabajo=?, MinutosTotalOT=?, TrabajoRealizado=?, Estado=?
         WHERE id=?
     """,
       (
@@ -124,11 +140,12 @@ def actualizar_orden_db(id_orden, datos):
           datos["TipoMantenimiento"],
           datos["HoraRecepcion"],
           datos["HoraCierre"],
+          datos["FechaCierre"],
           datos["HoraConformidad"],
           datos["MinutosEspera"],
           datos["MinutosTrabajo"],
           datos["MinutosTotalOT"],
-          datos["Descripcion"],
+          datos["TrabajoRealizado"],
           datos["Estado"],
           id_orden,
       ),
@@ -161,12 +178,19 @@ def actualizar_conformidad_con_evaluacion_db(
   conn.close()
 
 
+def eliminar_orden_db(id_orden):
+  conn = sqlite3.connect(DB_FILE)
+  cursor = conn.cursor()
+  cursor.execute("DELETE FROM ordenes WHERE id = ?", (id_orden,))
+  conn.commit()
+  conn.close()
+
+
 # --- GENERADOR DE PDF PROFESIONAL (fpdf2) ---
 def generar_pdf_orden(row):
   pdf = FPDF(orientation="P", unit="mm", format="A4")
   pdf.add_page()
 
-  # Encabezado
   pdf.set_font("helvetica", "B", 16)
   pdf.cell(
       0,
@@ -188,7 +212,6 @@ def generar_pdf_orden(row):
   )
   pdf.ln(4)
 
-  # Datos Generales
   pdf.set_font("helvetica", "B", 11)
   pdf.set_fill_color(220, 220, 220)
   pdf.cell(0, 7, "  1. DATOS GENERALES", new_x="LMARGIN", new_y="NEXT", fill=True)
@@ -244,7 +267,6 @@ def generar_pdf_orden(row):
   )
   pdf.ln(3)
 
-  # Tiempos
   pdf.set_font("helvetica", "B", 11)
   pdf.cell(0, 7, "  2. CONTROL DE TIEMPOS", new_x="LMARGIN", new_y="NEXT", fill=True)
 
@@ -264,17 +286,23 @@ def generar_pdf_orden(row):
       new_y="NEXT",
   )
 
+  f_cierre = (
+      row.get("FechaCierre")
+      if pd.notna(row.get("FechaCierre"))
+      and str(row.get("FechaCierre")).strip() != ""
+      else "--/--/--"
+  )
   pdf.cell(
       col_w,
       6,
-      f"Hora Cierre: {row.get('HoraCierre', '--:--')}",
+      f"Cierre: {f_cierre} - {row.get('HoraCierre', '--:--')}",
       new_x="RIGHT",
       new_y="TOP",
   )
   pdf.cell(
       col_w,
       6,
-      f"Hora Visto Bueno: {row.get('HoraConformidad', '--:--')}",
+      f"Hora Conformidad: {row.get('HoraConformidad', '--:--')}",
       new_x="LMARGIN",
       new_y="NEXT",
   )
@@ -302,28 +330,43 @@ def generar_pdf_orden(row):
   )
   pdf.ln(3)
 
-  # Descripción
   pdf.set_font("helvetica", "B", 11)
   pdf.cell(
       0,
       7,
-      "  3. DESCRIPCIÓN DE LA FALLA / TRABAJO REALIZADO",
+      "  3. DESCRIPCIÓN DE LA FALLA (SOLICITUD)",
       new_x="LMARGIN",
       new_y="NEXT",
       fill=True,
   )
   pdf.set_font("helvetica", "", 10)
-  pdf.multi_cell(
-      0, 6, str(row.get("Descripcion", "Sin descripción registrada."))
-  )
-  pdf.ln(3)
+  desc_falla = row.get("DescripcionFalla")
+  if not desc_falla or str(desc_falla) == "nan":
+    desc_falla = row.get("Descripcion", "Sin descripción registrada.")
+  pdf.multi_cell(0, 6, str(desc_falla))
+  pdf.ln(2)
 
-  # Evaluación
   pdf.set_font("helvetica", "B", 11)
   pdf.cell(
       0,
       7,
-      "  4. EVALUACIÓN DEL SERVICIO (VISTO BUENO)",
+      "  4. TRABAJO REALIZADO / DIAGNÓSTICO (TÉCNICO)",
+      new_x="LMARGIN",
+      new_y="NEXT",
+      fill=True,
+  )
+  pdf.set_font("helvetica", "", 10)
+  trabajo_realizado = row.get("TrabajoRealizado")
+  if not trabajo_realizado or str(trabajo_realizado) == "nan":
+    trabajo_realizado = "Pendiente o sin notas técnicas registradas."
+  pdf.multi_cell(0, 6, str(trabajo_realizado))
+  pdf.ln(3)
+
+  pdf.set_font("helvetica", "B", 11)
+  pdf.cell(
+      0,
+      7,
+      "  5. EVALUACIÓN DEL SERVICIO (CONFORMIDAD)",
       new_x="LMARGIN",
       new_y="NEXT",
       fill=True,
@@ -380,7 +423,7 @@ def generar_pdf_orden(row):
     pdf.cell(
         0,
         6,
-        "Orden pendiente de Visto Bueno o sin evaluación registrada.",
+        "Orden pendiente de Conformidad o sin evaluación registrada.",
         new_x="LMARGIN",
         new_y="NEXT",
     )
@@ -388,7 +431,7 @@ def generar_pdf_orden(row):
   return bytes(pdf.output())
 
 
-# Gestión de Técnicos (CSV auxiliar beta)
+# Gestión de Técnicos
 def cargar_tecnicos_df():
   if os.path.exists(TECNICOS_FILE):
     df_tec = pd.read_csv(TECNICOS_FILE, dtype=str)
@@ -440,7 +483,7 @@ def eliminar_tecnico(nombre_a_borrar):
   return True, "Técnico eliminado correctamente."
 
 
-# Gestión de Departamentos / Solicitantes (CSV auxiliar beta)
+# Gestión de Departamentos
 def cargar_departamentos_df():
   if os.path.exists(DEPTOS_FILE):
     df_dep = pd.read_csv(DEPTOS_FILE, dtype=str)
@@ -492,7 +535,7 @@ def eliminar_departamento(nombre_a_borrar):
   return True, "Departamento eliminado correctamente."
 
 
-# Gestión de Áreas (CSV auxiliar beta)
+# Gestión de Áreas
 def cargar_areas():
   if os.path.exists(AREAS_FILE):
     df_area = pd.read_csv(AREAS_FILE, dtype=str)
@@ -545,10 +588,6 @@ st.set_page_config(
 if "mensaje_alerta" not in st.session_state:
   st.session_state["mensaje_alerta"] = None
 
-if "ordenes_en_atencion" not in st.session_state:
-  st.session_state["ordenes_en_atencion"] = {}
-
-# Control de Sesión Global
 if "sesion_activa" not in st.session_state:
   st.session_state["sesion_activa"] = False
 if "rol_usuario" not in st.session_state:
@@ -651,7 +690,6 @@ else:
 
 st.sidebar.markdown("---")
 
-# Validar en qué sección estamos según la sesión activa
 if not st.session_state["sesion_activa"]:
   st.warning(
       "👈 Por favor, inicia sesión en el menú lateral para usar el sistema."
@@ -687,7 +725,7 @@ else:
       st.info(f"📌 Folio Asignado Automáticamente: **{num_ot_generado}**")
 
       desc_sol = st.text_area(
-          "Descripción corta de la falla",
+          "Descripción de la Falla",
           placeholder=(
               "Ej. Se detuvo la banda principal por atasco en sensor..."
           ),
@@ -715,11 +753,13 @@ else:
               "HoraEmision": datetime.now().strftime("%H:%M"),
               "HoraRecepcion": "--:--",
               "HoraCierre": "--:--",
+              "FechaCierre": "",
               "HoraConformidad": "--:--",
               "MinutosEspera": 0,
               "MinutosTrabajo": 0,
               "MinutosTotalOT": 0,
-              "Descripcion": desc_sol,
+              "DescripcionFalla": desc_sol,
+              "TrabajoRealizado": "Pendiente de atención técnica",
               "Estado": "Abierta",
           }
           guardar_nueva_solicitud(nueva_ot)
@@ -727,17 +767,14 @@ else:
 
     st.markdown("---")
     st.markdown("### 📋 Mis Órdenes Abiertas / En Seguimiento")
-    st.markdown(
-        "Aquí puedes visualizar el estatus actual de tus reportes enviados:"
-    )
 
     df_mis_ordenes = cargar_datos_db(
         "SELECT id, Fecha, Turno, Tecnico, Departamento, Area, Equipo, NumOrden,"
         " TipoMantenimiento, HoraEmision, HoraRecepcion, HoraCierre,"
-        " HoraConformidad, MinutosEspera, MinutosTrabajo, MinutosTotalOT,"
-        " Estado, Descripcion, EvalEPP, EvalAreaLimpia, EvalActitud,"
-        " EvalRecomendacion, EvalCausa, ComentarioCalificacion FROM ordenes"
-        " WHERE Departamento = ?",
+        " FechaCierre, HoraConformidad, MinutosEspera, MinutosTrabajo,"
+        " MinutosTotalOT, Estado, DescripcionFalla, TrabajoRealizado, EvalEPP,"
+        " EvalAreaLimpia, EvalActitud, EvalRecomendacion, EvalCausa,"
+        " ComentarioCalificacion FROM ordenes WHERE Departamento = ?",
         params=(depto_actual,),
     )
 
@@ -750,9 +787,9 @@ else:
       for index, row in df_mis_ordenes.iterrows():
         h_conf = str(row["HoraConformidad"])
         fecha_emision = str(row["Fecha"])
-        tiene_vb = h_conf != "--:--" and h_conf != ""
+        tiene_conf = h_conf != "--:--" and h_conf != ""
 
-        if tiene_vb and fecha_emision != fecha_hoy_str:
+        if tiene_conf and fecha_emision != fecha_hoy_str:
           continue
         ordenes_a_mostrar.append(row)
 
@@ -765,13 +802,21 @@ else:
           h_conf = str(row["HoraConformidad"])
           eval_epp = row.get("EvalEPP")
 
+          desc_falla_txt = row.get("DescripcionFalla")
+          if not desc_falla_txt or str(desc_falla_txt) == "nan":
+            desc_falla_txt = row.get("Descripcion", "Sin descripción")
+
+          trabajo_txt = row.get("TrabajoRealizado")
+          if not trabajo_txt or str(trabajo_txt) == "nan":
+            trabajo_txt = "Pendiente"
+
           if h_conf != "--:--" and h_conf:
-            color_badge = "🟢 **[Visto Bueno Otorgado]**"
+            color_badge = "🟢 **[Conformidad Otorgada]**"
             borde_markdown = (
                 ":green[**Orden Completada y Validada con Conformidad**]"
             )
           elif estado_ot == "Cerrada":
-            color_badge = "🟡 **[Cerrada - Pendiente de Visto Bueno]**"
+            color_badge = "🟡 **[Cerrada - Pendiente de Conformidad]**"
             borde_markdown = ":orange[**Atendida por Mantenimiento**]"
           else:
             color_badge = f"🔵 **[{estado_ot}]**"
@@ -783,11 +828,14 @@ else:
           ):
             st.markdown(borde_markdown)
             st.write(f"**Técnico Atendió:** {row['Tecnico']}")
-            st.write(f"**Descripción:** {row['Descripcion']}")
-            st.write(f"**Hora de Cierre:** {row['HoraCierre']}")
-            st.write(f"**Visto Bueno / Conformidad:** {h_conf}")
+            st.write(f"**Descripción de la Falla:** {desc_falla_txt}")
+            st.write(f"**Trabajo Realizado:** {trabajo_txt}")
+            st.write(
+                f"**Cierre:** {row.get('FechaCierre', '')} -"
+                f" {row['HoraCierre']}"
+            )
+            st.write(f"**Conformidad:** {h_conf}")
 
-            # Botón de Descarga PDF para esta orden
             pdf_bytes = generar_pdf_orden(row)
             st.download_button(
                 label=f"📥 Descargar Orden {row['NumOrden']} en PDF",
@@ -797,27 +845,65 @@ else:
                 key=f"pdf_sol_{ot_id}",
             )
 
-            # Mostrar evaluación guardada si ya existe
-            if eval_epp is not None and str(eval_epp).strip() != "" and str(eval_epp) != "nan":
+            if (
+                eval_epp is not None
+                and str(eval_epp).strip() != ""
+                and str(eval_epp) != "nan"
+            ):
               st.markdown("#### 📋 Evaluación del Servicio Registrada")
               st.write(f"- **Utilizó EPP:** {row.get('EvalEPP')}")
-              st.write(f"- **Entregó el área limpia:** {row.get('EvalAreaLimpia')}")
-              st.write(f"- **Mostró actitud de servicio:** {row.get('EvalActitud')}")
-              st.write(f"- **Recomendó acciones para no ocurrencia:** {row.get('EvalRecomendacion')}")
-              st.write(f"- **Explicó la causa que originó la falla:** {row.get('EvalCausa')}")
-              if row.get("ComentarioCalificacion") and str(row.get("ComentarioCalificacion")) != "nan":
-                st.write(f"- **Comentarios:** {row.get('ComentarioCalificacion')}")
+              st.write(
+                  f"- **Entregó el área limpia:** {row.get('EvalAreaLimpia')}"
+              )
+              st.write(
+                  f"- **Mostró actitud de servicio:** {row.get('EvalActitud')}"
+              )
+              st.write(
+                  f"- **Recomendó acciones para no ocurrencia:**"
+                  f" {row.get('EvalRecomendacion')}"
+              )
+              st.write(
+                  f"- **Explicó la causa que originó la falla:**"
+                  f" {row.get('EvalCausa')}"
+              )
+              if (
+                  row.get("ComentarioCalificacion")
+                  and str(row.get("ComentarioCalificacion")) != "nan"
+              ):
+                st.write(
+                    f"- **Comentarios:** {row.get('ComentarioCalificacion')}"
+                )
 
             if estado_ot == "Cerrada" and (h_conf == "--:--" or not h_conf):
               with st.form(f"form_conf_{ot_id}"):
                 st.markdown("#### 🌟 Evaluación del Servicio de Mantenimiento")
                 st.markdown("Valida los siguientes puntos del servicio brindado:")
-                
-                chk_epp = st.checkbox("👷‍♂️ Utilizó equipo de protección personal (EPP)", value=True, key=f"epp_{ot_id}")
-                chk_area = st.checkbox("🧹 Entregó el área limpia y ordenada", value=True, key=f"area_{ot_id}")
-                chk_act = st.checkbox("🤝 Mostró actitud de servicio y profesionalismo", value=True, key=f"act_{ot_id}")
-                chk_rec = st.checkbox("💡 Recomendó acciones para su no ocurrencia", value=True, key=f"rec_{ot_id}")
-                chk_causa = st.checkbox("🔍 Explicó la causa que originó la falla del equipo", value=True, key=f"causa_{ot_id}")
+
+                chk_epp = st.checkbox(
+                    "👷‍♂️ Utilizó equipo de protección personal (EPP)",
+                    value=True,
+                    key=f"epp_{ot_id}",
+                )
+                chk_area = st.checkbox(
+                    "🧹 Entregó el área limpia y ordenada",
+                    value=True,
+                    key=f"area_{ot_id}",
+                )
+                chk_act = st.checkbox(
+                    "🤝 Mostró actitud de servicio y profesionalismo",
+                    value=True,
+                    key=f"act_{ot_id}",
+                )
+                chk_rec = st.checkbox(
+                    "💡 Recomendó acciones para su no ocurrencia",
+                    value=True,
+                    key=f"rec_{ot_id}",
+                )
+                chk_causa = st.checkbox(
+                    "🔍 Explicó la causa que originó la falla del equipo",
+                    value=True,
+                    key=f"causa_{ot_id}",
+                )
 
                 comentario_ev = st.text_input(
                     "Comentarios u observaciones adicionales",
@@ -826,7 +912,7 @@ else:
                 )
 
                 btn_enviar_conf = st.form_submit_button(
-                    "Confirmar Visto Bueno y Enviar Evaluación",
+                    "Confirmar Conformidad y Enviar Evaluación",
                     use_container_width=True,
                 )
 
@@ -843,12 +929,14 @@ else:
                       ot_id, hora_actual, evals_dict, comentario_ev
                   )
                   st.success(
-                      "✅ Visto bueno y evaluación registrados correctamente a"
+                      "✅ Conformidad y evaluación registradas correctamente a"
                       f" las {hora_actual}."
                   )
                   st.rerun()
             elif h_conf != "--:--" and h_conf:
-              st.success(f"✔️ Esta orden ya cuenta con visto bueno ({h_conf}).")
+              st.success(
+                  f"✔️ Esta orden ya cuenta con Conformidad ({h_conf})."
+              )
 
   # ---------------------------------------------------------
   # CATEGORÍA 2: TÉCNICO DE MANTENIMIENTO
@@ -880,6 +968,10 @@ else:
         es_mio = tec_en_bd == tec_actual
         esta_libre = tec_en_bd == "Pendiente de Asignar"
 
+        desc_falla_txt = row.get("DescripcionFalla")
+        if not desc_falla_txt or str(desc_falla_txt) == "nan":
+          desc_falla_txt = row.get("Descripcion", "Sin descripción")
+
         if estado_actual_ot == "En Espera":
           estilo_tarjeta = "border-left: 5px solid #1c83e1; padding-left: 12px; margin-bottom: 12px;"
           badge_estado = "🔵 **En Espera**"
@@ -896,7 +988,7 @@ else:
                     <div style="{estilo_tarjeta}">
                         <p style="margin-bottom: 4px;"><b>[{row['NumOrden']}]</b> &nbsp;|&nbsp; Área: <b>{row['Area']}</b> &nbsp;|&nbsp; Equipo: <b>{row['Equipo']}</b> &nbsp;|&nbsp; {badge_estado}</p>
                         <p style="margin-bottom: 4px; color: #555;"><b>Depto:</b> {row.get('Departamento', 'N/D')} &nbsp;|&nbsp; <b>Técnico:</b> {tec_en_bd}</p>
-                        <p style="margin-bottom: 0;"><b>Descripción:</b> {row['Descripcion']}</p>
+                        <p style="margin-bottom: 0;"><b>Descripción de la Falla:</b> {desc_falla_txt}</p>
                     </div>
                     """,
               unsafe_allow_html=True,
@@ -905,7 +997,6 @@ else:
           with st.expander(
               f"⚙️ Gestionar Orden [{row['NumOrden']}]", expanded=False
           ):
-            # Botón PDF para técnico
             pdf_bytes = generar_pdf_orden(row)
             st.download_button(
                 label=f"📥 Descargar Orden {row['NumOrden']} en PDF",
@@ -930,11 +1021,14 @@ else:
                         else datetime.now().strftime("%H:%M")
                     ),
                     "HoraCierre": row["HoraCierre"],
+                    "FechaCierre": row.get("FechaCierre", ""),
                     "HoraConformidad": row["HoraConformidad"],
                     "MinutosEspera": row["MinutosEspera"],
                     "MinutosTrabajo": row["MinutosTrabajo"],
                     "MinutosTotalOT": row["MinutosTotalOT"],
-                    "Descripcion": row["Descripcion"],
+                    "TrabajoRealizado": row.get(
+                        "TrabajoRealizado", "En atención..."
+                    ),
                     "Estado": row["Estado"],
                 }
                 actualizar_orden_db(ot_id, datos_toma)
@@ -967,9 +1061,21 @@ else:
                       key=f"accion_{ot_id}",
                   )
 
+                trabajo_actual_val = row.get("TrabajoRealizado", "")
+                if (
+                    not trabajo_actual_val
+                    or str(trabajo_actual_val) == "nan"
+                    or trabajo_actual_val == "Pendiente de atención técnica"
+                ):
+                  trabajo_actual_val = ""
+
                 desc_tec = st.text_area(
-                    "Diagnóstico o Notas de Avance",
-                    value=row["Descripcion"],
+                    "Trabajo Realizado / Diagnóstico Técnico",
+                    value=trabajo_actual_val,
+                    placeholder=(
+                        "Ej. Se reemplazó el sensor dañado, se calibró la"
+                        " banda y se probó el equipo exitosamente..."
+                    ),
                     key=f"desc_{ot_id}",
                 )
 
@@ -984,11 +1090,12 @@ else:
                         "TipoMantenimiento": row["TipoMantenimiento"],
                         "HoraRecepcion": row["HoraRecepcion"],
                         "HoraCierre": row["HoraCierre"],
+                        "FechaCierre": "",
                         "HoraConformidad": row["HoraConformidad"],
                         "MinutosEspera": row["MinutosEspera"],
                         "MinutosTrabajo": row["MinutosTrabajo"],
                         "MinutosTotalOT": row["MinutosTotalOT"],
-                        "Descripcion": row["Descripcion"],
+                        "TrabajoRealizado": desc_tec,
                         "Estado": "Abierta",
                     }
                     actualizar_orden_db(ot_id, datos_liberar)
@@ -1011,11 +1118,12 @@ else:
                             else datetime.now().strftime("%H:%M")
                         ),
                         "HoraCierre": "--:--",
+                        "FechaCierre": "",
                         "HoraConformidad": "--:--",
                         "MinutosEspera": 0,
                         "MinutosTrabajo": 0,
                         "MinutosTotalOT": 0,
-                        "Descripcion": nota_final_espera,
+                        "TrabajoRealizado": nota_final_espera,
                         "Estado": "En Espera",
                     }
                     actualizar_orden_db(ot_id, datos_espera)
@@ -1024,32 +1132,48 @@ else:
 
                   elif accion_orden == "Finalizar y Cerrar Orden":
                     try:
-                      hora_actual_str = datetime.now().strftime("%H:%M")
+                      ahora_dt = datetime.now()
+                      hora_actual_str = ahora_dt.strftime("%H:%M")
+                      fecha_actual_str = ahora_dt.strftime("%Y-%m-%d")
+
                       h_rec = (
-                          row["HoraEmision"]
-                          if row["HoraEmision"] != "--:--"
-                          else hora_actual_str
+                          row["HoraRecepcion"]
+                          if row["HoraRecepcion"] != "--:--"
+                          and pd.notna(row["HoraRecepcion"])
+                          else (
+                              row["HoraEmision"]
+                              if row["HoraEmision"] != "--:--"
+                              else hora_actual_str
+                          )
                       )
                       h_cie = hora_actual_str
+                      f_cie = fecha_actual_str
                       h_con = (
                           row["HoraConformidad"]
                           if row["HoraConformidad"] != "--:--"
                           else "--:--"
                       )
 
-                      dt_emi = datetime.strptime(row["HoraEmision"], "%H:%M")
-                      dt_rec = datetime.strptime(h_rec, "%H:%M")
-                      dt_cie = datetime.strptime(h_cie, "%H:%M")
+                      fecha_emision_str = str(row["Fecha"])
+                      dt_emi_time = datetime.strptime(
+                          row["HoraEmision"], "%H:%M"
+                      ).time()
+                      dt_rec_time = datetime.strptime(h_rec, "%H:%M").time()
+                      dt_cie_time = datetime.strptime(h_cie, "%H:%M").time()
 
-                      base_date = datetime.today()
-                      dt_e = datetime.combine(base_date, dt_emi.time())
-                      dt_r = datetime.combine(base_date, dt_rec.time())
-                      dt_c = datetime.combine(base_date, dt_cie.time())
+                      fecha_base = datetime.strptime(
+                          fecha_emision_str, "%Y-%m-%d"
+                      ).date()
+                      fecha_cierre_dt = datetime.strptime(f_cie, "%Y-%m-%d").date()
 
+                      dt_e = datetime.combine(fecha_base, dt_emi_time)
+                      dt_r = datetime.combine(fecha_base, dt_rec_time)
                       if dt_r < dt_e:
                         dt_r += timedelta(days=1)
+
+                      dt_c = datetime.combine(fecha_cierre_dt, dt_cie_time)
                       if dt_c < dt_r:
-                        dt_c += timedelta(days=1)
+                        dt_c = dt_r
 
                       min_esp = max(0, int((dt_r - dt_e).total_seconds() / 60))
                       min_trab = max(
@@ -1064,11 +1188,12 @@ else:
                           "TipoMantenimiento": clasificacion_trabajo,
                           "HoraRecepcion": h_rec,
                           "HoraCierre": h_cie,
+                          "FechaCierre": f_cie,
                           "HoraConformidad": h_con,
                           "MinutosEspera": min_esp,
                           "MinutosTrabajo": min_trab,
                           "MinutosTotalOT": min_tot,
-                          "Descripcion": desc_tec,
+                          "TrabajoRealizado": desc_tec,
                           "Estado": "Cerrada",
                       }
                       actualizar_orden_db(ot_id, datos_actualizados)
@@ -1151,13 +1276,22 @@ else:
         st.markdown("### 📋 Detalle de Órdenes y Descarga Individual en PDF")
 
         for index, row in df_f.iterrows():
+          desc_falla_txt = row.get("DescripcionFalla")
+          if not desc_falla_txt or str(desc_falla_txt) == "nan":
+            desc_falla_txt = row.get("Descripcion", "Sin descripción")
+
+          trabajo_txt = row.get("TrabajoRealizado")
+          if not trabajo_txt or str(trabajo_txt) == "nan":
+            trabajo_txt = "Pendiente"
+
           with st.expander(
               f"[{row['NumOrden']}] Área: {row['Area']} | Equipo:"
               f" {row['Equipo']} | Estado: {row['Estado']}"
           ):
             st.write(f"**Departamento:** {row.get('Departamento', 'N/D')}")
             st.write(f"**Técnico:** {row['Tecnico']}")
-            st.write(f"**Descripción:** {row['Descripcion']}")
+            st.write(f"**Descripción de la Falla:** {desc_falla_txt}")
+            st.write(f"**Trabajo Realizado:** {trabajo_txt}")
 
             pdf_bytes = generar_pdf_orden(row)
             st.download_button(
@@ -1169,20 +1303,21 @@ else:
             )
 
   # ---------------------------------------------------------
-  # CATEGORÍA 4: ADMINISTRADOR (GESTIÓN TOTAL)
+  # CATEGORÍA 4: ADMINISTRADOR (GESTIÓN TOTAL Y BORRADO DE ÓRDENES)
   # ---------------------------------------------------------
   elif rol == "Admin":
     st.subheader("🛠️ Panel de Administración del Sistema")
     st.markdown(
-        "Gestiona los técnicos autorizados, los departamentos solicitantes y"
-        " las áreas de planta."
+        "Gestiona los técnicos autorizados, los departamentos solicitantes,"
+        " las áreas de planta y el control de registros."
     )
 
-    tab_g1, tab_g2, tab_g3 = st.tabs(
+    tab_g1, tab_g2, tab_g3, tab_g4 = st.tabs(
         [
             "👥 Gestión de Técnicos",
             "🏢 Gestión de Departamentos",
             "🏭 Gestión de Áreas",
+            "🗑️ Borrado y Control de Órdenes",
         ]
     )
 
@@ -1292,3 +1427,59 @@ else:
             st.error(msg)
         else:
           st.warning("Selecciona un área válida.")
+
+    with tab_g4:
+      st.markdown("#### 🗑️ Gestión y Borrado de Órdenes de Trabajo")
+      st.markdown(
+          "Selecciona una orden por su número de folio (NumOrden) para"
+          " eliminarla de la base de datos permanentemente si es necesario."
+      )
+
+      df_todas_ots = cargar_datos_db(
+          "SELECT id, NumOrden, Fecha, Area, Equipo, Estado, Departamento FROM"
+          " ordenes ORDER BY id DESC"
+      )
+
+      if df_todas_ots.empty:
+        st.info("No hay órdenes registradas en el sistema.")
+      else:
+        # Crear opciones formateadas para el selectbox
+        opciones_ots = {
+            f"[{row['NumOrden']}] Fecha: {row['Fecha']} | Área: {row['Area']} | Equipo: {row['Equipo']} ({row['Estado']})": row[
+                "id"
+            ]
+            for index, row in df_todas_ots.iterrows()
+        }
+
+        ot_seleccionada_label = st.selectbox(
+            "Selecciona la Orden de Trabajo a Borrar",
+            ["Selecciona una orden..."] + list(opciones_ots.keys()),
+        )
+
+        if ot_seleccionada_label != "Selecciona una orden...":
+          id_ot_a_borrar = opciones_ots[ot_seleccionada_label]
+
+          st.warning(
+              "⚠️ **Advertencia:** Estás a punto de eliminar permanentemente"
+              " esta orden de trabajo de la base de datos."
+          )
+
+          # Casilla de confirmación adicional para evitar borrados accidentales
+          confirmar_borrado = st.checkbox(
+              "Confirmo que deseo eliminar definitivamente este registro"
+          )
+
+          if st.button(
+              "🗑️ Eliminar Orden Seleccionada", type="primary"
+          ):
+            if confirmar_borrado:
+              eliminar_orden_db(id_ot_a_borrar)
+              st.success(
+                  "✅ La orden de trabajo ha sido eliminada exitosamente."
+              )
+              st.rerun()
+            else:
+              st.error(
+                  "Debes marcar la casilla de confirmación para autorizar el"
+                  " borrado."
+              )
