@@ -167,7 +167,7 @@ def agregar_o_actualizar_tecnico(nombre, password):
   nombre = str(nombre).strip()
   password = str(password).strip().replace(".0", "")
   if not nombre or not password:
-    return False, "El nombre y la contraseña no pueden estar vacíos."
+    return False, "El nombre y la contraseña não pueden estar vacíos."
   if nombre in df_tec["Tecnico"].values:
     df_tec.loc[df_tec["Tecnico"] == nombre, "Password"] = password
     mensaje = f"Contraseña actualizada para {nombre}."
@@ -217,7 +217,7 @@ def agregar_o_actualizar_departamento(nombre, password):
   nombre = str(nombre).strip()
   password = str(password).strip().replace(".0", "")
   if not nombre or not password:
-    return False, "El departamento y la contraseña no pueden estar vacíos."
+    return False, "El departamento y la contraseña não pueden estar vacíos."
   if nombre in df_dep["Departamento"].values:
     df_dep.loc[df_dep["Departamento"] == nombre, "Password"] = password
     mensaje = f"Contraseña actualizada para el departamento {nombre}."
@@ -261,7 +261,7 @@ def agregar_area(nueva_area):
   areas = cargar_areas()
   nueva_area = str(nueva_area).strip()
   if not nueva_area:
-    return False, "El nombre del área no puede estar vacío."
+    return False, "El nombre del área não puede estar vacío."
   if nueva_area in areas:
     return False, "Esta área ya existe."
   areas.append(nueva_area)
@@ -277,7 +277,7 @@ def eliminar_area(area_a_borrar):
     areas.remove(area_a_borrar)
     pd.DataFrame({"Area": areas}).to_csv(AREAS_FILE, index=False)
     return True, "Área eliminada."
-  return False, "El área no existe."
+  return False, "El área não existe."
 
 
 # Inicializar Base de Datos Beta
@@ -296,6 +296,10 @@ if "mensaje_alerta" not in st.session_state:
 if "hora_default" not in st.session_state:
   st.session_state["hora_default"] = datetime.now().strftime("%H:%M")
 
+# Control de sesiones temporales para técnicos que tomaron una orden
+if "ordenes_en_atencion" not in st.session_state:
+  st.session_state["ordenes_en_atencion"] = {}
+
 st.title("⚙️ Sistema de Órdenes de Trabajo (Fase Beta) - Avangard Labs")
 
 # --- MENÚ LATERAL: 4 CATEGORÍAS DE USUARIOS ---
@@ -306,7 +310,7 @@ categoria_usuario = st.sidebar.selectbox(
     "¿Quién está ingresando?",
     [
         "📝 Solicitante (Producción)",
-        "👷‍♂️ Técnico de Mantenimiento",
+        "👷‍♂️ Órdenes de trabajo Abiertas",
         "📊 Visualizador / Gerencia",
         "🛠️ Administrador (Gestión Total)",
     ],
@@ -358,16 +362,13 @@ if categoria_usuario == "📝 Solicitante (Producción)":
     st.markdown("---")
     st.markdown("🔒 **Validación de Envío**")
 
-    # Contraseña, botón y alerta visual juntos en las columnas inferiores
     col_env1, col_env2, col_env3 = st.columns([1, 1, 1.5])
     with col_env1:
       pass_depto_input = st.text_input(
           "Contraseña de Departamento", type="password"
       )
     with col_env2:
-      st.markdown(
-          "<br>", unsafe_allow_html=True
-      )  # Espaciado estético para alinear con el input
+      st.markdown("<br>", unsafe_allow_html=True)
       submitted_sol = st.form_submit_button(
           "Enviar Solicitud a Mantenimiento", use_container_width=True
       )
@@ -422,16 +423,16 @@ if categoria_usuario == "📝 Solicitante (Producción)":
           else:
             st.error("Contraseña de departamento incorrecta.")
         else:
-          st.error("Departamento no encontrado.")
+          st.error("Departamento não encontrado.")
 
 # ---------------------------------------------------------
-# CATEGORÍA 2: TÉCNICO DE MANTENIMIENTO
+# CATEGORÍA 2: ÓRDENES DE TRABAJO ABIERTAS (TÉCNICOS)
 # ---------------------------------------------------------
-elif categoria_usuario == "👷‍♂️ Técnico de Mantenimiento":
-  st.subheader("👷‍♂️ Panel de Atención Técnica")
+elif categoria_usuario == "👷‍♂️ Órdenes de trabajo Abiertas":
+  st.subheader("👷‍♂️ Panel de Órdenes de Trabajo Abiertas")
   st.markdown(
-      "Revisa las solicitudes abiertas, tómalas y completa los datos de"
-      " intervención."
+      "Selecciona la orden que atenderás, valida tu contraseña como"
+      " responsable y despliega el menú de cierre."
   )
 
   if st.session_state["mensaje_alerta"]:
@@ -449,7 +450,13 @@ elif categoria_usuario == "👷‍♂️ Técnico de Mantenimiento":
         f"⚠️ Hay **{len(df_pendientes)}** orden(es) esperando atención técnica."
     )
 
+    df_tec_system = cargar_tecnicos_df()
+    lista_tecs = ["Selecciona tu nombre..."] + list(df_tec_system["Tecnico"])
+
     for index, row in df_pendientes.iterrows():
+      ot_id = row["id"]
+      estat_atencion = st.session_state["ordenes_en_atencion"].get(ot_id, None)
+
       with st.expander(
           f"🔔 [{row['NumOrden']}] Depto: {row.get('Departamento', 'N/D')} | Área:"
           f" {row['Area']} | Equipo: {row['Equipo']}"
@@ -460,117 +467,158 @@ elif categoria_usuario == "👷‍♂️ Técnico de Mantenimiento":
             f" {row['HoraEmision']}"
         )
 
-        df_tec_system = cargar_tecnicos_df()
-        lista_tecs = ["Selecciona tu nombre..."] + list(
-            df_tec_system["Tecnico"]
-        )
+        # FASE 1: El técnico se hace responsable mediante contraseña
+        if not estat_atencion:
+          with st.form(f"form_responsable_{ot_id}"):
+            st.markdown("### 🛠️ Asignar Responsable de Atención")
+            col_r1, col_r2 = st.columns(2)
+            with col_r1:
+              tec_elegido = st.selectbox(
+                  "Técnico Responsable", lista_tecs, key=f"tec_sel_{ot_id}"
+              )
+            with col_r2:
+              pass_tec_responsable = st.text_input(
+                  "Contraseña Personal",
+                  type="password",
+                  key=f"pass_sel_{ot_id}",
+              )
 
-        with st.form(f"form_atencion_{row['id']}") as f:
-          col_t1, col_t2 = st.columns(2)
-          with col_t1:
-            tec_asignado = st.selectbox(
-                "Técnico que Atiende", lista_tecs, key=f"tec_{row['id']}"
-            )
-            tipo_pto = st.selectbox(
-                "Tipo de Mantenimiento",
-                ["Correctivo", "Preventivo", "Predictivo", "Ajuste / Mejora"],
-                key=f"tipo_{row['id']}",
-            )
-          with col_t2:
-            pass_tec_input = st.text_input(
-                "Contraseña Personal de Técnico",
-                type="password",
-                key=f"pass_t_{row['id']}",
+            btn_hacerse_resp = st.form_submit_button(
+                "Marcarme como Responsable / Atender esta Orden",
+                use_container_width=True,
             )
 
-          desc_tec = st.text_area(
-              "Diagnóstico y Trabajo Realizado",
-              value=row["Descripcion"],
-              key=f"desc_{row['id']}",
-          )
+            if btn_hacerse_resp:
+              if tec_elegido == "Selecciona tu nombre...":
+                st.error("Selecciona tu nombre de técnico.")
+              elif not pass_tec_responsable:
+                st.error("Ingresa tu contraseña personal.")
+              else:
+                match_t = df_tec_system[
+                    df_tec_system["Tecnico"] == tec_elegido.strip()
+                ]
+                if not match_t.empty:
+                  p_correcta = str(match_t["Password"].values[0]).strip()
+                  p_ingresada = str(pass_tec_responsable).strip().replace(
+                      ".0", ""
+                  )
 
-          st.markdown("---")
-          btn_cerrar_ot = st.form_submit_button(
-              "Finalizar y Cerrar Orden de Trabajo", use_container_width=True
-          )
-
-          if btn_cerrar_ot:
-            if tec_asignado == "Selecciona tu nombre...":
-              st.error("Selecciona tu nombre de técnico.")
-            elif not pass_tec_input:
-              st.error("Ingresa tu contraseña.")
-            else:
-              match = df_tec_system[
-                  df_tec_system["Tecnico"] == tec_asignado.strip()
-              ]
-              if not match.empty:
-                pass_correcta = str(match["Password"].values[0]).strip()
-                pass_ingresada = str(pass_tec_input).strip().replace(
-                    ".0", ""
-                )
-
-                if pass_ingresada == pass_correcta:
-                  try:
-                    hora_actual_str = datetime.now().strftime("%H:%M")
-                    h_rec = (
-                        row["HoraEmision"]
-                        if row["HoraEmision"] != "--:--"
-                        else hora_actual_str
+                  if p_ingresada == p_correcta:
+                    st.session_state["ordenes_en_atencion"][ot_id] = (
+                        tec_elegido
                     )
-                    h_cie = hora_actual_str
-                    h_con = (
-                        row["HoraConformidad"]
-                        if row["HoraConformidad"] != "--:--"
-                        else "--:--"
-                    )
-
-                    dt_emi = datetime.strptime(row["HoraEmision"], "%H:%M")
-                    dt_rec = datetime.strptime(h_rec, "%H:%M")
-                    dt_cie = datetime.strptime(h_cie, "%H:%M")
-
-                    base_date = datetime.today()
-                    dt_e = datetime.combine(base_date, dt_emi.time())
-                    dt_r = datetime.combine(base_date, dt_rec.time())
-                    dt_c = datetime.combine(base_date, dt_cie.time())
-
-                    if dt_r < dt_e:
-                      dt_r += timedelta(days=1)
-                    if dt_c < dt_r:
-                      dt_c += timedelta(days=1)
-
-                    min_esp = max(
-                        0, int((dt_r - dt_e).total_seconds() / 60)
-                    )
-                    min_trab = max(
-                        0, int((dt_c - dt_r).total_seconds() / 60)
-                    )
-                    min_tot = max(0, int((dt_c - dt_e).total_seconds() / 60))
-
-                    datos_actualizados = {
-                        "Tecnico": tec_asignado,
-                        "TipoMantenimiento": tipo_pto,
-                        "HoraRecepcion": h_rec,
-                        "HoraCierre": h_cie,
-                        "HoraConformidad": h_con,
-                        "MinutosEspera": min_esp,
-                        "MinutosTrabajo": min_trab,
-                        "MinutosTotalOT": min_tot,
-                        "Descripcion": desc_tec,
-                        "Estado": "Cerrada",
-                    }
-
-                    actualizar_orden_db(row["id"], datos_actualizados)
-                    st.session_state["mensaje_alerta"] = (
-                        f"✅ Orden {row['NumOrden']} cerrada correctamente a las"
-                        f" {h_cie}."
+                    st.success(
+                        f"✅ ¡Asignado correctamente! Técnico: {tec_elegido}."
+                        " Menú de cierre desplegado."
                     )
                     st.rerun()
-                  except ValueError:
-                    st.error("Error al procesar las horas automáticas.")
+                  else:
+                    st.error("Contraseña incorrecta.")
                 else:
-                  st.error("Contraseña incorrecta.")
-              else:
-                st.error("Técnico no encontrado.")
+                  st.error("Técnico não encontrado.")
+
+        # FASE 2: Menú desplegado para completar y cerrar la orden una vez que ya se autenticó
+        else:
+          tec_activo = estat_atencion
+          st.success(
+              f"👤 Técnico responsable actual: **{tec_activo}** (Autenticado)"
+          )
+
+          with st.form(f"form_cierre_{ot_id}"):
+            col_t1, col_t2 = st.columns(2)
+            with col_t1:
+              tipo_pto = st.selectbox(
+                  "Tipo de Mantenimiento",
+                  [
+                      "Correctivo",
+                      "Preventivo",
+                      "Predictivo",
+                      "Ajuste / Mejora",
+                  ],
+                  key=f"tipo_{ot_id}",
+              )
+            with col_t2:
+              st.info(
+                  "ℹ️ Ya estás autenticado como responsable para esta orden."
+              )
+
+            desc_tec = st.text_area(
+                "Diagnóstico y Trabajo Realizado",
+                value=row["Descripcion"],
+                key=f"desc_{ot_id}",
+            )
+
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+              btn_cancelar_atencion = st.form_submit_button(
+                  "Cancelar / Liberar Orden", use_container_width=True
+              )
+            with col_btn2:
+              btn_cerrar_ot = st.form_submit_button(
+                  "Finalizar y Cerrar Orden de Trabajo", use_container_width=True
+              )
+
+            if btn_cancelar_atencion:
+              del st.session_state["ordenes_en_atencion"][ot_id]
+              st.rerun()
+
+            if btn_cerrar_ot:
+              try:
+                hora_actual_str = datetime.now().strftime("%H:%M")
+                h_rec = (
+                    row["HoraEmision"]
+                    if row["HoraEmision"] != "--:--"
+                    else hora_actual_str
+                )
+                h_cie = hora_actual_str
+                h_con = (
+                    row["HoraConformidad"]
+                    if row["HoraConformidad"] != "--:--"
+                    else "--:--"
+                )
+
+                dt_emi = datetime.strptime(row["HoraEmision"], "%H:%M")
+                dt_rec = datetime.strptime(h_rec, "%H:%M")
+                dt_cie = datetime.strptime(h_cie, "%H:%M")
+
+                base_date = datetime.today()
+                dt_e = datetime.combine(base_date, dt_emi.time())
+                dt_r = datetime.combine(base_date, dt_rec.time())
+                dt_c = datetime.combine(base_date, dt_cie.time())
+
+                if dt_r < dt_e:
+                  dt_r += timedelta(days=1)
+                if dt_c < dt_r:
+                  dt_c += timedelta(days=1)
+
+                min_esp = max(0, int((dt_r - dt_e).total_seconds() / 60))
+                min_trab = max(0, int((dt_c - dt_r).total_seconds() / 60))
+                min_tot = max(0, int((dt_c - dt_e).total_seconds() / 60))
+
+                datos_actualizados = {
+                    "Tecnico": tec_activo,
+                    "TipoMantenimiento": tipo_pto,
+                    "HoraRecepcion": h_rec,
+                    "HoraCierre": h_cie,
+                    "HoraConformidad": h_con,
+                    "MinutosEspera": min_esp,
+                    "MinutosTrabajo": min_trab,
+                    "MinutosTotalOT": min_tot,
+                    "Descripcion": desc_tec,
+                    "Estado": "Cerrada",
+                }
+
+                actualizar_orden_db(ot_id, datos_actualizados)
+                if ot_id in st.session_state["ordenes_en_atencion"]:
+                  del st.session_state["ordenes_en_atencion"][ot_id]
+
+                st.session_state["mensaje_alerta"] = (
+                    f"✅ Orden {row['NumOrden']} cerrada correctamente a las"
+                    f" {h_cie}."
+                )
+                st.rerun()
+              except ValueError:
+                st.error("Error al procesar las horas automáticas.")
 
 # ---------------------------------------------------------
 # CATEGORÍA 3: VISUALIZADOR / GERENCIA
