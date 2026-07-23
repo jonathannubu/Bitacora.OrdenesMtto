@@ -534,8 +534,8 @@ else:
         " ti o disponibles en general."
     )
     st.markdown(
-        "💡 **Indicadores:** 🔴 **Barra roja** (Abiertas / Sin técnico),"
-        " 🔵 **Barra azul** (En espera / Pausadas)."
+        "💡 **Indicadores:** 🔵 **Barra azul** (En espera / Pausadas), 🔴"
+        " **Barra roja** (Abiertas / Sin técnico)."
     )
 
     if st.session_state["mensaje_alerta"]:
@@ -557,15 +557,15 @@ else:
         es_mio = tec_en_bd == tec_actual
         esta_libre = tec_en_bd == "Pendiente de Asignar"
 
-        # Barra lateral minimalista limpia (Borde izquierdo de color, fondo neutro del tema)
-        if estado_actual_ot == "Abierta" or esta_libre:
-          # ROJO: Abiertas o sin técnico
-          estilo_tarjeta = "border-left: 5px solid #ff4b4b; padding-left: 12px; margin-bottom: 12px;"
-          badge_estado = "🔴 **Abierta / Sin Técnico**"
-        elif estado_actual_ot == "En Espera":
-          # AZUL: En espera
+        # Barra lateral minimalista corregida
+        if estado_actual_ot == "En Espera":
+          # AZUL: En espera (refacción o externo)
           estilo_tarjeta = "border-left: 5px solid #1c83e1; padding-left: 12px; margin-bottom: 12px;"
           badge_estado = "🔵 **En Espera**"
+        elif estado_actual_ot == "Abierta" or esta_libre:
+          # ROJO: Abiertas o sin técnico asignado
+          estilo_tarjeta = "border-left: 5px solid #ff4b4b; padding-left: 12px; margin-bottom: 12px;"
+          badge_estado = "🔴 **Abierta / Sin Técnico**"
         else:
           estilo_tarjeta = "border-left: 5px solid #808080; padding-left: 12px; margin-bottom: 12px;"
           badge_estado = f"⚪ **{estado_actual_ot}**"
