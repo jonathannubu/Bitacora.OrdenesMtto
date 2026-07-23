@@ -702,7 +702,7 @@ else:
 
         lista_areas = ["Selecciona un área / línea..."] + cargar_areas()
 
-        # Selección de área fuera del form para actualizar al instante
+        # Selección de área / línea fuera del form para actualizar al instante
         area_sol = st.selectbox("Área / Línea", lista_areas, key="select_area_solicitud")
 
         # Cargar equipos dinámicamente según el área seleccionada
@@ -928,35 +928,6 @@ else:
                             ),
                         )
 
-                        col_h1, col_h2, col_h3 = st.columns(3)
-                        with col_h1:
-                            h_rec = st.text_input(
-                                "Hora Recepción (HH:MM)",
-                                value=(
-                                    datetime.now().strftime("%H:%M")
-                                    if row["HoraRecepcion"] == "--:--"
-                                    else row["HoraRecepcion"]
-                                ),
-                            )
-                        with col_h2:
-                            f_cierre_val = st.text_input(
-                                "Fecha Cierre (AAAA-MM-DD)",
-                                value=(
-                                    datetime.now().strftime("%Y-%m-%d")
-                                    if not row["FechaCierre"]
-                                    else row["FechaCierre"]
-                                ),
-                            )
-                        with col_h3:
-                            h_cie = st.text_input(
-                                "Hora Cierre (HH:MM)",
-                                value=(
-                                    datetime.now().strftime("%H:%M")
-                                    if row["HoraCierre"] == "--:--"
-                                    else row["HoraCierre"]
-                                ),
-                            )
-
                         trabajo_tec = st.text_area(
                             "Trabajo Realizado / Diagnóstico Técnico",
                             value=(
@@ -981,6 +952,15 @@ else:
                             "Guardar Avances Técnicos"
                         )
                         if btn_guardar_tec:
+                            # Asignación automática de horas y fechas del sistema
+                            h_rec_val = (
+                                datetime.now().strftime("%H:%M")
+                                if row["HoraRecepcion"] == "--:--"
+                                else row["HoraRecepcion"]
+                            )
+                            f_cierre_val = datetime.now().strftime("%Y-%m-%d")
+                            h_cie_val = datetime.now().strftime("%H:%M")
+                            
                             min_esp = 15
                             min_trab = 45
                             min_tot = min_esp + min_trab
@@ -988,8 +968,8 @@ else:
                             datos_act = {
                                 "Tecnico": tec_asignado,
                                 "TipoMantenimiento": tipo_mtto,
-                                "HoraRecepcion": h_rec,
-                                "HoraCierre": h_cie,
+                                "HoraRecepcion": h_rec_val,
+                                "HoraCierre": h_cie_val,
                                 "FechaCierre": f_cierre_val,
                                 "HoraConformidad": row["HoraConformidad"],
                                 "MinutosEspera": min_esp,
