@@ -599,15 +599,20 @@ def eliminar_area(area_a_borrar):
   return False, "El área o línea no existe."
 
 
-# --- GESTIÓN DE EQUIPOS VINCULADOS A ÁREAS ---
+# --- GESTIÓN DE EQUIPOS VINCULADOS A ÁREAS (ROBUSTA) ---
 def cargar_equipos_df():
   if os.path.exists(EQUIPOS_FILE):
     df_eq = pd.read_csv(EQUIPOS_FILE, dtype=str)
+    # Si el archivo viejo no tiene la columna 'Area' o 'Equipo', las autogeneramos para evitar errores
+    if "Area" not in df_eq.columns:
+      df_eq["Area"] = "Mantenimiento General"
+    if "Equipo" not in df_eq.columns:
+      df_eq["Equipo"] = df_eq.iloc[:, 0] if not df_eq.empty else ""
+
     df_eq["Equipo"] = df_eq["Equipo"].fillna("").astype(str).str.strip()
     df_eq["Area"] = df_eq["Area"].fillna("").astype(str).str.strip()
     return df_eq
   else:
-    # Valores iniciales vinculados a áreas predeterminadas
     df_eq = pd.DataFrame({
         "Area": [
             "Línea 1 - Envasado",
@@ -633,7 +638,6 @@ def agregar_equipo(area, equipo):
   if not area or not equipo:
     return False, "El área y el equipo no pueden estar vacíos."
   
-  # Verificar si ya existe exactamente el mismo equipo en esa área
   match = df_eq[(df_eq["Area"] == area) & (df_eq["Equipo"] == equipo)]
   if not match.empty:
     return False, "Este equipo ya existe registrado en esta área."
@@ -814,7 +818,6 @@ else:
             "Especificar nombre del equipo o máquina", placeholder="Ej. Etiquetadora auxiliar"
         )
 
-      # Folio consecutivo automático con prefijo OT- y formato OT-000001
       num_ot_generado = obtener_siguiente_folio()
       st.info(f"📌 Folio Asignado Automáticamente: **{num_ot_generado}**")
 
@@ -830,7 +833,7 @@ else:
       )
 
       if submitted_sol:
-        if tipo_sel_equipo == "➕ Otro (Especificار manualmente)" or tipo_sel_equipo == "➕ Otro (Especificar manualmente)":
+        if tipo_sel_equipo == "➕ Otro (Especificar manualmente)":
           equipo_final = equipo_manual.strip()
         else:
           equipo_final = tipo_sel_equipo
