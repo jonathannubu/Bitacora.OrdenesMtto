@@ -17,7 +17,7 @@ DEPTOS_FILE = "departamentos_beta.csv"
 def inicializar_bd():
   conn = sqlite3.connect(DB_FILE)
   cursor = conn.cursor()
-  
+
   # Tabla principal de órdenes
   cursor.execute("""
         CREATE TABLE IF NOT EXISTS ordenes (
@@ -57,7 +57,9 @@ def inicializar_bd():
             ultimo_folio INTEGER
         )
     """)
-  cursor.execute("INSERT OR IGNORE INTO contador_folios (id, ultimo_folio) VALUES (1, 0)")
+  cursor.execute(
+      "INSERT OR IGNORE INTO contador_folios (id, ultimo_folio) VALUES (1, 0)"
+  )
 
   columnas_requeridas = [
       ("FechaCierre", "TEXT"),
@@ -79,7 +81,8 @@ def inicializar_bd():
 
   try:
     cursor.execute(
-        "UPDATE ordenes SET DescripcionFalla = Descripcion WHERE (DescripcionFalla IS NULL OR DescripcionFalla = '') AND Descripcion IS NOT NULL"
+        "UPDATE ordenes SET DescripcionFalla = Descripcion WHERE (DescripcionFalla"
+        " IS NULL OR DescripcionFalla = '') AND Descripcion IS NOT NULL"
     )
   except sqlite3.OperationalError:
     pass
@@ -94,7 +97,9 @@ def obtener_siguiente_folio():
   cursor.execute("SELECT ultimo_folio FROM contador_folios WHERE id = 1")
   res = cursor.fetchone()
   siguiente = (res[0] if res else 0) + 1
-  cursor.execute("UPDATE contador_folios SET ultimo_folio = ? WHERE id = 1", (siguiente,))
+  cursor.execute(
+      "UPDATE contador_folios SET ultimo_folio = ? WHERE id = 1", (siguiente,)
+  )
   conn.commit()
   conn.close()
   return f"OT-{siguiente:06d}"
@@ -209,247 +214,354 @@ def eliminar_orden_db(id_orden):
   conn.close()
 
 
-# --- GENERADOR DE PDF PROFESIONAL (fpdf2) ---
+# --- GENERADOR DE PDF PROFESIONAL (ESTILO FORMATO FMA-01_REV00) ---
 def generar_pdf_orden(row):
   pdf = FPDF(orientation="P", unit="mm", format="A4")
   pdf.add_page()
 
+  # Colores corporativos (Azul institucional y gris)
+  AZUL_CLARO = (220, 235, 252)
+  AZUL_OSCURO = (20, 80, 160)
+  GRIS_LINEA = (150, 150, 150)
+  NEGRO = (0, 0, 0)
+
+  # --- ENCABEZADO ---
   pdf.set_font("helvetica", "B", 16)
+  pdf.set_text_color(*AZUL_OSCURO)
+  pdf.cell(130, 8, "avangard labs", new_x="RIGHT", new_y="TOP", align="L")
+
+  # Caja de Folio
+  pdf.set_font("helvetica", "B", 9)
+  pdf.set_text_color(*NEGRO)
+  pdf.set_fill_color(255, 255, 255)
+  pdf.set_draw_color(*AZUL_OSCURO)
+  pdf.rect(145, 10, 20, 6)
+  pdf.rect(165, 10, 30, 6)
+  pdf.set_xy(145, 10)
+  pdf.cell(20, 6, "FOLIO", align="C")
+  pdf.set_xy(165, 10)
+  pdf.cell(30, 6, str(row.get("NumOrden", "")), align="C")
+
+  pdf.ln(10)
+  pdf.set_font("helvetica", "B", 10)
+  pdf.set_text_color(*AZUL_OSCURO)
   pdf.cell(
       0,
-      10,
-      "AVANGARD LABS - ORDEN DE TRABAJO DE MANTENIMIENTO",
+      6,
+      "SOLICITUD DE SERVICIO A MANTENIMIENTO",
       new_x="LMARGIN",
       new_y="NEXT",
       align="C",
   )
 
-  pdf.set_font("helvetica", "", 10)
-  pdf.cell(
-      0,
-      6,
-      f"Fecha de Emisión: {row.get('Fecha', '')} | Folio: {row.get('NumOrden', '')}",
-      new_x="LMARGIN",
-      new_y="NEXT",
-      align="C",
-  )
-  pdf.ln(4)
+  # --- SECCIÓN 1: SOLICITUD ---
+  pdf.set_fill_color(*AZUL_CLARO)
+  pdf.set_font("helvetica", "B", 9)
+  pdf.set_text_color(*AZUL_OSCURO)
+  pdf.cell(0, 5, " SOLICITANTE", new_x="LMARGIN", new_y="NEXT", fill=True)
 
-  pdf.set_font("helvetica", "B", 11)
-  pdf.set_fill_color(220, 220, 220)
-  pdf.cell(0, 7, "  1. DATOS GENERALES", new_x="LMARGIN", new_y="NEXT", fill=True)
+  pdf.set_font("helvetica", "", 8)
+  pdf.set_text_color(*NEGRO)
+  y_ini = pdf.get_y()
+  pdf.rect(10, y_ini, 130, 12)
+  pdf.rect(140, y_ini, 60, 12)
 
-  pdf.set_font("helvetica", "", 10)
-  col_w = 95
+  pdf.set_xy(12, y_ini + 1)
   pdf.cell(
-      col_w,
-      6,
-      f"Departamento Solicitante: {row.get('Departamento', '')}",
-      new_x="RIGHT",
-      new_y="TOP",
-  )
-  pdf.cell(
-      col_w, 6, f"Área / Línea: {row.get('Area', '')}", new_x="LMARGIN", new_y="NEXT"
-  )
-
-  pdf.cell(
-      col_w,
-      6,
-      f"Equipo o Máquina: {row.get('Equipo', '')}",
-      new_x="RIGHT",
-      new_y="TOP",
-  )
-  pdf.cell(
-      col_w,
-      6,
-      f"Turno: {row.get('Turno', '')}",
+      126,
+      5,
+      f"DEPARTAMENTO: {row.get('Departamento', '')}  |  Área/Línea:"
+      f" {row.get('Area', '')}",
       new_x="LMARGIN",
       new_y="NEXT",
   )
+  pdf.set_xy(142, y_ini + 1)
+  pdf.cell(56, 5, f"EQUIPO: {row.get('Equipo', '')}")
 
+  # Descripción de falla
+  y_desc = pdf.get_y() + 2
+  pdf.rect(10, y_desc, 190, 14)
+  pdf.set_xy(12, y_desc + 1)
   pdf.cell(
-      col_w,
-      6,
-      f"Técnico Asignado: {row.get('Tecnico', '')}",
-      new_x="RIGHT",
-      new_y="TOP",
+      186, 4, "DESCRIBA EL TIPO DE AVERÍA Y/O SERVICIO REQUERIDO:", align="L"
   )
-  pdf.cell(
-      col_w,
-      6,
-      f"Estado Actual: {row.get('Estado', '')}",
-      new_x="LMARGIN",
-      new_y="NEXT",
-  )
-  pdf.cell(
-      0,
-      6,
-      f"Tipo de Mantenimiento: {row.get('TipoMantenimiento', '')}",
-      new_x="LMARGIN",
-      new_y="NEXT",
-  )
-  pdf.ln(3)
-
-  pdf.set_font("helvetica", "B", 11)
-  pdf.cell(0, 7, "  2. CONTROL DE TIEMPOS", new_x="LMARGIN", new_y="NEXT", fill=True)
-
-  pdf.set_font("helvetica", "", 10)
-  pdf.cell(
-      col_w,
-      6,
-      f"Hora Emisión: {row.get('HoraEmision', '--:--')}",
-      new_x="RIGHT",
-      new_y="TOP",
-  )
-  pdf.cell(
-      col_w,
-      6,
-      f"Hora Recepción Técnico: {row.get('HoraRecepcion', '--:--')}",
-      new_x="LMARGIN",
-      new_y="NEXT",
-  )
-
-  f_cierre = (
-      row.get("FechaCierre")
-      if pd.notna(row.get("FechaCierre"))
-      and str(row.get("FechaCierre")).strip() != ""
-      else "--/--/--"
-  )
-  pdf.cell(
-      col_w,
-      6,
-      f"Cierre: {f_cierre} - {row.get('HoraCierre', '--:--')}",
-      new_x="RIGHT",
-      new_y="TOP",
-  )
-  pdf.cell(
-      col_w,
-      6,
-      f"Hora Conformidad: {row.get('HoraConformidad', '--:--')}",
-      new_x="LMARGIN",
-      new_y="NEXT",
-  )
-
-  pdf.cell(
-      col_w,
-      6,
-      f"Minutos de Espera: {row.get('MinutosEspera', 0)} min",
-      new_x="RIGHT",
-      new_y="TOP",
-  )
-  pdf.cell(
-      col_w,
-      6,
-      f"Minutos de Trabajo: {row.get('MinutosTrabajo', 0)} min",
-      new_x="LMARGIN",
-      new_y="NEXT",
-  )
-  pdf.cell(
-      0,
-      6,
-      f"Tiempo Total OT: {row.get('MinutosTotalOT', 0)} min",
-      new_x="LMARGIN",
-      new_y="NEXT",
-  )
-  pdf.ln(3)
-
-  pdf.set_font("helvetica", "B", 11)
-  pdf.cell(
-      0,
-      7,
-      "  3. DESCRIPCIÓN DE LA FALLA (SOLICITUD)",
-      new_x="LMARGIN",
-      new_y="NEXT",
-      fill=True,
-  )
-  pdf.set_font("helvetica", "", 10)
+  pdf.set_font("helvetica", "", 9)
+  pdf.set_xy(12, y_desc + 6)
   desc_falla = row.get("DescripcionFalla")
   if not desc_falla or str(desc_falla) == "nan":
     desc_falla = row.get("Descripcion", "Sin descripción registrada.")
-  pdf.multi_cell(0, 6, str(desc_falla))
-  pdf.ln(2)
+  pdf.multi_cell(
+      186, 4, str(desc_falla), align="L"
+  )  # Usar multi_cell con ancho fijo
 
-  pdf.set_font("helvetica", "B", 11)
+  pdf.set_y(y_desc + 16)
+
+  # --- TABLA DE TIEMPOS (EMISIÓN, RECEPCIÓN, REPARACIÓN, CONFORMIDAD) ---
+  ancho_col = 190 / 4
+  y_t = pdf.get_y()
+  pdf.set_fill_color(*AZUL_CLARO)
+  pdf.set_font("helvetica", "B", 8)
+
+  # Cabeceras
+  pdf.rect(10, y_t, ancho_col, 5)
+  pdf.rect(10 + ancho_col, y_t, ancho_col, 5)
+  pdf.rect(10 + ancho_col * 2, y_t, ancho_col, 5)
+  pdf.rect(10 + ancho_col * 3, y_t, ancho_col, 5)
+
+  pdf.set_xy(10, y_t)
+  pdf.cell(ancho_col, 5, "EMISIÓN", align="C")
+  pdf.set_xy(10 + ancho_col, y_t)
+  pdf.cell(ancho_col, 5, "RECEPCIÓN", align="C")
+  pdf.set_xy(10 + ancho_col * 2, y_t)
+  pdf.cell(ancho_col, 5, "REPARACIÓN", align="C")
+  pdf.set_xy(10 + ancho_col * 3, y_t)
+  pdf.cell(ancho_col, 5, "CONFORMIDAD", align="C")
+
+  filas_tiempos = [
+      (
+          "FECHA",
+          row.get("Fecha", ""),
+          row.get("Fecha", ""),
+          row.get("FechaCierre", ""),
+          row.get("Fecha", ""),
+      ),
+      (
+          " HORA",
+          row.get("HoraEmision", ""),
+          row.get("HoraRecepcion", ""),
+          row.get("HoraCierre", ""),
+          row.get("HoraConformidad", ""),
+      ),
+      (" NOMBRE", "", "", row.get("Tecnico", ""), ""),
+      (" FIRMA", "", "", "", ""),
+  ]
+
+  y_actual = y_t + 5
+  pdf.set_font("helvetica", "", 8)
+  for etiqueta, e, r, rep, c in filas_tiempos:
+    pdf.rect(10, y_actual, 25, 5)
+    pdf.rect(35, y_actual, ancho_col - 25, 5)
+    pdf.rect(10 + ancho_col, y_actual, ancho_col, 5)
+    pdf.rect(10 + ancho_col * 2, y_actual, ancho_col, 5)
+    pdf.rect(10 + ancho_col * 3, y_actual, ancho_col, 5)
+
+    pdf.set_xy(10, y_actual)
+    pdf.cell(25, 5, etiqueta, align="L")
+    pdf.set_xy(35, y_actual)
+    pdf.cell(ancho_col - 25, 5, str(e), align="C")
+    pdf.set_xy(10 + ancho_col, y_actual)
+    pdf.cell(ancho_col, 5, str(r), align="C")
+    pdf.set_xy(10 + ancho_col * 2, y_actual)
+    pdf.cell(ancho_col, 5, str(rep), align="C")
+    pdf.set_xy(10 + ancho_col * 3, y_actual)
+    pdf.cell(ancho_col, 5, str(c), align="C")
+    y_actual += 5
+
+  pdf.set_y(y_actual + 2)
+
+  # --- SECCIÓN 2: MANTENIMIENTO INDUSTRIAL ---
+  pdf.set_fill_color(*AZUL_CLARO)
+  pdf.set_font("helvetica", "B", 9)
+  pdf.set_text_color(*AZUL_OSCURO)
+  pdf.cell(
+      0, 5, " MANTENIMIENTO INDUSTRIAL", new_x="LMARGIN", new_y="NEXT", fill=True
+  )
+
+  pdf.set_font("helvetica", "", 8)
+  pdf.set_text_color(*NEGRO)
   pdf.cell(
       0,
-      7,
-      "  4. TRABAJO REALIZADO / DIAGNÓSTICO (TÉCNICO)",
+      5,
+      f"TÉCNICO: {row.get('Tecnico', 'Pendiente')}",
       new_x="LMARGIN",
       new_y="NEXT",
-      fill=True,
   )
-  pdf.set_font("helvetica", "", 10)
+
+  # Clasificación y Tipo de Intervención en columnas limpias
+  pdf.set_font("helvetica", "B", 8)
+  pdf.cell(
+      0,
+      4,
+      "CLASIFICACIÓN DE TRABAJO & TIPO DE INTERVENCIÓN:",
+      new_x="LMARGIN",
+      new_y="NEXT",
+  )
+  pdf.set_font("helvetica", "", 8)
+
+  tipo_mant = str(row.get("TipoMantenimiento", ""))
+  c_correctivo = "X" if "Correctivo" in tipo_mant else ""
+  c_preventivo = "X" if "Preventivo" in tipo_mant else ""
+  c_ajuste = "X" if "Ajuste" in tipo_mant else ""
+  c_mejora = "X" if "Mejora" in tipo_mant else ""
+
+  y_clas = pdf.get_y()
+  pdf.rect(10, y_clas, 4, 4)
+  pdf.set_xy(15, y_clas)
+  pdf.cell(40, 4, f"[{c_correctivo}] CORRECTIVO")
+
+  pdf.rect(55, y_clas, 4, 4)
+  pdf.set_xy(60, y_clas)
+  pdf.cell(40, 4, f"[{c_preventivo}] PREVENTIVO")
+
+  pdf.rect(100, y_clas, 4, 4)
+  pdf.set_xy(105, y_clas)
+  pdf.cell(40, 4, f"[{c_ajuste}] AJUSTE")
+
+  pdf.rect(145, y_clas, 4, 4)
+  pdf.set_xy(150, y_clas)
+  pdf.cell(40, 4, f"[{c_mejora}] MEJORA")
+
+  pdf.ln(6)
+
+  # --- SECCIÓN 3: INFORME DE LA REPARACIÓN ---
+  pdf.set_fill_color(*AZUL_CLARO)
+  pdf.set_font("helvetica", "B", 9)
+  pdf.set_text_color(*AZUL_OSCURO)
+  pdf.cell(
+      0, 5, " INFORME DE LA REPARACIÓN", new_x="LMARGIN", new_y="NEXT", fill=True
+  )
+
+  y_inf = pdf.get_y()
+  pdf.rect(10, y_inf, 190, 30)
+  pdf.set_font("helvetica", "", 9)
+  pdf.set_text_color(*NEGRO)
+  pdf.set_xy(12, y_inf + 2)
   trabajo_realizado = row.get("TrabajoRealizado")
   if not trabajo_realizado or str(trabajo_realizado) == "nan":
     trabajo_realizado = "Pendiente o sin notas técnicas registradas."
-  pdf.multi_cell(0, 6, str(trabajo_realizado))
-  pdf.ln(3)
+  pdf.multi_cell(186, 4, str(trabajo_realizado))
 
-  pdf.set_font("helvetica", "B", 11)
+  pdf.set_y(y_inf + 32)
+
+  # --- SECCIÓN 4: MATERIAL Y/O REFACCIONES UTILIZADAS ---
+  pdf.set_fill_color(*AZUL_CLARO)
+  pdf.set_font("helvetica", "B", 9)
+  pdf.set_text_color(*AZUL_OSCURO)
   pdf.cell(
       0,
-      7,
-      "  5. EVALUACIÓN DEL SERVICIO (CONFORMIDAD)",
+      5,
+      " MATERIAL Y/O REFACCIONES UTILIZADAS",
       new_x="LMARGIN",
       new_y="NEXT",
       fill=True,
   )
-  pdf.set_font("helvetica", "", 10)
 
-  eval_epp = row.get("EvalEPP")
-  if eval_epp is not None and str(eval_epp).strip() != "" and str(eval_epp) != "nan":
-    pdf.cell(
-        0,
-        6,
-        f"- Utilizó equipo de protección personal (EPP): {row.get('EvalEPP', 'N/D')}",
-        new_x="LMARGIN",
-        new_y="NEXT",
-    )
-    pdf.cell(
-        0,
-        6,
-        f"- Entregó el área limpia y ordenada: {row.get('EvalAreaLimpia', 'N/D')}",
-        new_x="LMARGIN",
-        new_y="NEXT",
-    )
-    pdf.cell(
-        0,
-        6,
-        f"- Mostró actitud de servicio y profesionalismo: {row.get('EvalActitud', 'N/D')}",
-        new_x="LMARGIN",
-        new_y="NEXT",
-    )
-    pdf.cell(
-        0,
-        6,
-        f"- Recomendó acciones para su no ocurrencia: {row.get('EvalRecomendacion', 'N/D')}",
-        new_x="LMARGIN",
-        new_y="NEXT",
-    )
-    pdf.cell(
-        0,
-        6,
-        f"- Explicó la causa que originó la falla: {row.get('EvalCausa', 'N/D')}",
-        new_x="LMARGIN",
-        new_y="NEXT",
-    )
-    comentario = row.get("ComentarioCalificacion")
-    if comentario and str(comentario) != "nan":
-      pdf.cell(
-          0,
-          6,
-          f"- Comentarios adicionales: {comentario}",
-          new_x="LMARGIN",
-          new_y="NEXT",
-      )
-  else:
-    pdf.cell(
-        0,
-        6,
-        "Orden pendiente de Conformidad o sin evaluación registrada.",
-        new_x="LMARGIN",
-        new_y="NEXT",
-    )
+  # Tabla de refacciones 4 filas
+  w_cols = [10, 90, 30, 30, 30]
+  x_pos = 10
+  y_mat = pdf.get_y()
+  pdf.set_font("helvetica", "B", 8)
+  pdf.set_text_color(*NEGRO)
+
+  headers_mat = ["#", "DESCRIPCIÓN", "CANTIDAD", "MARCA", "MODELO"]
+  for i, h in enumerate(headers_mat):
+    pdf.rect(x_pos, y_mat, w_cols[i], 5)
+    pdf.set_xy(x_pos, y_mat)
+    pdf.cell(w_cols[i], 5, h, align="C")
+    x_pos += w_cols[i]
+
+  y_mat += 5
+  pdf.set_font("helvetica", "", 8)
+  for r_idx in range(1, 4):
+    x_pos = 10
+    for i, w in enumerate(w_cols):
+      pdf.rect(x_pos, y_mat, w, 5)
+      if i == 0:
+        pdf.set_xy(x_pos, y_mat)
+        pdf.cell(w, 5, str(r_idx), align="C")
+      x_pos += w
+    y_mat += 5
+
+  pdf.set_y(y_mat + 2)
+
+  # --- SECCIÓN 5: EVALUACIÓN DEL SERVICIO ---
+  pdf.set_fill_color(*AZUL_CLARO)
+  pdf.set_font("helvetica", "B", 9)
+  pdf.set_text_color(*AZUL_OSCURO)
+  pdf.cell(
+      0, 5, " EVALUACIÓN DEL SERVICIO", new_x="LMARGIN", new_y="NEXT", fill=True
+  )
+
+  y_eval = pdf.get_y()
+  pdf.rect(10, y_eval, 120, 28)
+  pdf.rect(130, y_eval, 70, 28)
+
+  # Subencabezados evaluación
+  pdf.set_font("helvetica", "B", 8)
+  pdf.set_text_color(*NEGRO)
+  pdf.set_xy(12, y_eval + 1)
+  pdf.cell(100, 4, "EL TÉCNICO", align="L")
+  pdf.set_xy(115, y_eval + 1)
+  pdf.cell(10, 4, "SÍ", align="C")
+  pdf.set_xy(123, y_eval + 1)
+  pdf.cell(10, 4, "NO", align="C")
+
+  pdf.set_xy(132, y_eval + 1)
+  pdf.cell(66, 4, "COMENTARIOS PARA MEJORAR EL SERVICIO", align="L")
+
+  preguntas_eval = [
+      "A) UTILIZÓ EQUIPO DE PROTECCION PERSONAL",
+      "B) ENTREGÓ EL AREA LIMPIA",
+      "C) MOSTRÓ ACTITUD DE SERVICIO",
+      "D) RECOMENDÓ ACCIONES PARA SU NO OCURRENCIA",
+      "E) EXPLICÓ LA CAUSA QUE ORIGINÓ LA FALLA DEL EQUIPO",
+  ]
+
+  y_p = y_eval + 5
+  pdf.set_font("helvetica", "", 7)
+
+  eval_epp = row.get("EvalEPP", "")
+  eval_limpia = row.get("EvalAreaLimpia", "")
+  eval_actitud = row.get("EvalActitud", "")
+  eval_rec = row.get("EvalRecomendacion", "")
+  eval_causa = row.get("EvalCausa", "")
+  respuestas_guardadas = [
+      eval_epp,
+      eval_limpia,
+      eval_actitud,
+      eval_rec,
+      eval_causa,
+  ]
+
+  for idx_p, preg in enumerate(preguntas_eval):
+    pdf.set_xy(12, y_p)
+    pdf.cell(100, 4, preg, align="L")
+
+    resp = str(respuestas_guardadas[idx_p]).strip().lower()
+    val_si = "X" if resp in ["sí", "si", "true", "1"] else ""
+    val_no = "X" if resp in ["no", "false", "0"] else ""
+
+    pdf.rect(116, y_p + 0.5, 3, 3)
+    pdf.set_xy(115, y_p)
+    pdf.cell(5, 4, val_si, align="C")
+
+    pdf.rect(124, y_p + 0.5, 3, 3)
+    pdf.set_xy(123, y_p)
+    pdf.cell(5, 4, val_no, align="C")
+
+    y_p += 4.5
+
+  # Comentario adicional
+  comentario = row.get("ComentarioCalificacion", "")
+  if comentario and str(comentario) != "nan":
+    pdf.set_font("helvetica", "", 8)
+    pdf.set_xy(132, y_eval + 6)
+    pdf.multi_cell(66, 4, str(comentario))
+
+  pdf.set_y(y_eval + 30)
+
+  # --- PIE DE PÁGINA ---
+  pdf.set_font("helvetica", "I", 7)
+  pdf.set_text_color(100, 100, 100)
+  pdf.cell(100, 5, "FMA-01_REV00", align="L")
+  pdf.cell(
+      90,
+      5,
+      "EMISIÓN: 28-Mar-2025      VIGENCIA: 28-Mar-2028",
+      align="R",
+      new_x="LMARGIN",
+      new_y="NEXT",
+  )
 
   return bytes(pdf.output())
 
@@ -1067,8 +1179,8 @@ else:
                       "Clasificación de Trabajo",
                       [
                           "Correctivo",
+                          "Preventivo",
                           "Ajuste",
-                          "Configuracion de linea",
                           "Mejora",
                       ],
                       key=f"tipo_{ot_id}",
@@ -1188,7 +1300,9 @@ else:
                       fecha_base = datetime.strptime(
                           fecha_emision_str, "%Y-%m-%d"
                       ).date()
-                      fecha_cierre_dt = datetime.strptime(f_cie, "%Y-%m-%d").date()
+                      fecha_cierre_dt = datetime.strptime(
+                          f_cie, "%Y-%m-%d"
+                      ).date()
 
                       dt_e = datetime.combine(fecha_base, dt_emi_time)
                       dt_r = datetime.combine(fecha_base, dt_rec_time)
@@ -1439,7 +1553,8 @@ else:
       st.markdown("---")
       st.markdown("#### Eliminar Área / Línea")
       area_a_borrar = st.selectbox(
-          "Selecciona área o línea a eliminar", ["Selecciona..."] + lista_areas_actuales
+          "Selecciona área o línea a eliminar",
+          ["Selecciona..."] + lista_areas_actuales,
       )
       if st.button("Eliminar Área / Línea"):
         if area_a_borrar != "Selecciona...":
@@ -1491,9 +1606,7 @@ else:
               "Confirmo que deseo eliminar definitivamente este registro"
           )
 
-          if st.button(
-              "🗑️ Eliminar Orden Seleccionada", type="primary"
-          ):
+          if st.button("🗑️ Eliminar Orden Seleccionada", type="primary"):
             if confirmar_borrado:
               eliminar_orden_db(id_ot_a_borrar)
               st.success(
