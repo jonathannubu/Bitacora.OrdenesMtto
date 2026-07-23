@@ -403,7 +403,7 @@ if categoria_usuario == "📝 Solicitante (Producción)":
                 "Area": area_sol,
                 "Equipo": equipo_sol,
                 "NumOrden": num_ot_generado,
-                "TipoMantenimiento": "1-Correctivo",
+                "TipoMantenimiento": "Correctivo",
                 "HoraEmision": datetime.now().strftime("%H:%M"),
                 "HoraRecepcion": "--:--",
                 "HoraCierre": "--:--",
@@ -526,12 +526,7 @@ elif categoria_usuario == "👷‍♂️ Órdenes de trabajo Abiertas":
             with col_t1:
               clasificacion_trabajo = st.selectbox(
                   "Clasificación de Trabajo",
-                  [
-                      "1-Correctivo",
-                      "2-Ajuste",
-                      "3-Configuracion de linea",
-                      "4-Mejora",
-                  ],
+                  ["Correctivo", "Ajuste", "Configuracion de linea", "Mejora"],
                   key=f"tipo_{ot_id}",
               )
             with col_t2:
