@@ -534,8 +534,8 @@ else:
         " ti o disponibles en general."
     )
     st.markdown(
-        "💡 **Código de colores:** 🔴 **Rojo** (Abiertas / Sin técnico"
-        " asignado), 🔵 **Azul** (En espera / Pausadas)."
+        "💡 **Indicadores:** 🔴 **Barra roja** (Abiertas / Sin técnico),"
+        " 🔵 **Barra azul** (En espera / Pausadas)."
     )
 
     if st.session_state["mensaje_alerta"]:
@@ -557,35 +557,33 @@ else:
         es_mio = tec_en_bd == tec_actual
         esta_libre = tec_en_bd == "Pendiente de Asignar"
 
-        # Definir color de contenedor según estatus y si requiere técnico
+        # Barra lateral minimalista limpia (Borde izquierdo de color, fondo neutro del tema)
         if estado_actual_ot == "Abierta" or esta_libre:
-          # ROJO / ROSA CLARO: Abiertas o sin técnico
-          estilo_color = "background-color: #f8d7da; padding: 15px; border-radius: 8px; border-left: 6px solid #dc3545; margin-bottom: 15px;"
-          badge_estado = (
-              "🔴 **[ESTADO: ABIERTA / SIN TÉCNICO ASIGNADO]**"
-          )
+          # ROJO: Abiertas o sin técnico
+          estilo_tarjeta = "border-left: 5px solid #ff4b4b; padding-left: 12px; margin-bottom: 12px;"
+          badge_estado = "🔴 **Abierta / Sin Técnico**"
         elif estado_actual_ot == "En Espera":
-          # AZUL CLARO: En espera (refacción o externo)
-          estilo_color = "background-color: #cce5ff; padding: 15px; border-radius: 8px; border-left: 6px solid #004085; margin-bottom: 15px;"
-          badge_estado = "🔵 **[ESTADO: EN ESPERA / PAUSADA]**"
+          # AZUL: En espera
+          estilo_tarjeta = "border-left: 5px solid #1c83e1; padding-left: 12px; margin-bottom: 12px;"
+          badge_estado = "🔵 **En Espera**"
         else:
-          estilo_color = "background-color: #f1f3f5; padding: 15px; border-radius: 8px; border-left: 6px solid #6c757d; margin-bottom: 15px;"
-          badge_estado = f"⚪ **[ESTADO: {estado_actual_ot}]**"
+          estilo_tarjeta = "border-left: 5px solid #808080; padding-left: 12px; margin-bottom: 12px;"
+          badge_estado = f"⚪ **{estado_actual_ot}**"
 
-        # Contenedor visual coloreado
+        # Contenedor limpio con barra lateral de color
         with st.container():
           st.markdown(
               f"""
-                    <div style="{estilo_color}">
-                        <h4>[{row['NumOrden']}] Área: {row['Area']} | Equipo: {row['Equipo']}</h4>
-                        <p>{badge_estado} | <b>Depto:</b> {row.get('Departamento', 'N/D')} | <b>Técnico:</b> {tec_en_bd}</p>
-                        <p><b>Descripción:</b> {row['Descripcion']}</p>
+                    <div style="{estilo_tarjeta}">
+                        <p style="margin-bottom: 4px;"><b>[{row['NumOrden']}]</b> &nbsp;|&nbsp; Área: <b>{row['Area']}</b> &nbsp;|&nbsp; Equipo: <b>{row['Equipo']}</b> &nbsp;|&nbsp; {badge_estado}</p>
+                        <p style="margin-bottom: 4px; color: #555;"><b>Depto:</b> {row.get('Departamento', 'N/D')} &nbsp;|&nbsp; <b>Técnico:</b> {tec_en_bd}</p>
+                        <p style="margin-bottom: 0;"><b>Descripción:</b> {row['Descripcion']}</p>
                     </div>
                     """,
               unsafe_allow_html=True,
           )
 
-          # Opciones de acción dentro de un expander o directo
+          # Opciones de acción dentro de un expander limpio
           with st.expander(
               f"⚙️ Gestionar Orden [{row['NumOrden']}]", expanded=False
           ):
@@ -752,7 +750,7 @@ else:
                     except ValueError:
                       st.error("Error al procesar las horas automáticas.")
 
-          st.markdown("<br>", unsafe_allow_html=True)
+          st.markdown("---")
 
   # ---------------------------------------------------------
   # CATEGORÍA 3: VISUALIZADOR
@@ -825,7 +823,7 @@ else:
         col_ind1, col_ind2 = st.columns(2)
 
         with col_ind1:
-          st.markdown("#### ⚙️ Top de Fallas por Equipo (En Lista)")
+          st.markdown("#### ⚙️ Top de Fallas por Equipo")
           if "Equipo" in df_f.columns and not df_f["Equipo"].empty:
             top_equipos = df_f["Equipo"].value_counts().reset_index()
             top_equipos.columns = ["Equipo", "Total Fallas"]
@@ -862,51 +860,7 @@ else:
 
         st.markdown("---")
         st.markdown("### 📋 Detalle de Órdenes (Informativo)")
-        st.markdown(
-            "A continuación se enlistan las órdenes filtradas. Código de"
-            " colores: 🔴 **Rojo** (Abiertas o sin técnico), 🟡 **Amarillo**"
-            " (Cerradas pendientes de visto bueno), 🔵 **Azul** (En espera), 🟢"
-            " **Verde** (Completadas)."
-        )
-
-        # Función para aplicar estilos condicionales y marcar con colores en el visualizador
-        def destacar_ordenes_visualizador(row):
-          estado = str(row["Estado"])
-          tec = str(row["Tecnico"])
-          h_conf = str(row["HoraConformidad"])
-
-          # 1. Órdenes Abiertas o sin técnico asignado -> ROJO
-          if estado == "Abierta" or tec == "Pendiente de Asignar":
-            return [
-                "background-color: #f8d7da; color: #721c24;" for _ in row.index
-            ]
-          # 2. Órdenes Cerradas pendientes de visto bueno -> AMARILLO
-          elif estado == "Cerrada" and (
-              h_conf == "--:--" or h_conf == "nan" or not h_conf
-          ):
-            return [
-                "background-color: #fff3cd; color: #856404;" for _ in row.index
-            ]
-          # 3. Órdenes en espera (refacción / externo) -> AZUL
-          elif estado == "En Espera":
-            return [
-                "background-color: #cce5ff; color: #004085;" for _ in row.index
-            ]
-          # 4. Órdenes con visto bueno completo -> VERDE
-          elif h_conf != "--:--" and h_conf != "nan" and h_conf:
-            return [
-                "background-color: #d4edda; color: #155724;" for _ in row.index
-            ]
-          else:
-            return ["" for _ in row.index]
-
-        try:
-          st.dataframe(
-              df_f.style.apply(destacar_ordenes_visualizador, axis=1),
-              use_container_width=True,
-          )
-        except Exception:
-          st.dataframe(df_f, use_container_width=True)
+        st.dataframe(df_f, use_container_width=True)
 
   # ---------------------------------------------------------
   # CATEGORÍA 4: ADMINISTRADOR (GESTIÓN TOTAL)
