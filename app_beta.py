@@ -277,11 +277,7 @@ if categoria_usuario == "📝 Solicitante (Producción)":
   lista_departamentos = [
       "Selecciona un departamento...",
       "Acondicionado",
-      "Fabricacion",
-      "Almacen",
-      "Desarrollo",
-      "Calidad",
-      "EHS",
+      "Producción",
   ]
   lista_areas = ["Selecciona un área..."] + cargar_areas()
 
@@ -556,7 +552,7 @@ elif categoria_usuario == "📊 Visualizador / Gerencia":
       st.markdown("### 📋 Detalle de Órdenes y Dar Conformidad")
       st.markdown(
           "*Las órdenes cerradas por mantenimiento aparecen aquí para que el"
-            " solicitante pueda dar su visto bueno (conformidad).*  "
+          " solicitante pueda dar su visto bueno (conformidad).*  "
       )
 
       for index, row in df_f.iterrows():
@@ -685,7 +681,7 @@ elif categoria_usuario == "🛠️ Administrador (Gestión Total)":
       n_area = st.text_input("Nombre de la Nueva Área o Nave")
       if st.button("Guardar Nueva Área"):
         ex, msg = agregar_area(n_area)
-        if ex:
+        if exito := ex:
           st.success(msg)
           st.rerun()
         else:
