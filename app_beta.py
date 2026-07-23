@@ -283,11 +283,35 @@ def eliminar_area(area_a_borrar):
 # Inicializar Base de Datos Beta
 inicializar_bd()
 
-# --- CONFIGURACIÓN DE PÁGINA ---
+# --- CONFIGURACIÓN DE PÁGINA Y ESTILO CORPORATIVO ---
 st.set_page_config(
     page_title="Mesa de Ayuda [BETA] - Avangard Labs",
     page_icon="⚙️",
     layout="wide",
+)
+
+# Inyección de Estilos CSS con la Paleta de Colores Inspirada en el Logotipo (Tonos Azules/Cian de Avangard Labs)
+st.markdown(
+    """
+    <style>
+        /* Color de acento general para botones primarios y selección */
+        .stButton>button {
+            background-color: #2b7bb9;
+            color: white;
+            border-radius: 6px;
+            border: none;
+        }
+        .stButton>button:hover {
+            background-color: #1f5d8e;
+            color: white;
+        }
+        /* Estilos generales de encabezados */
+        h1, h2, h3 {
+            color: #1f5d8e;
+        }
+    </style>
+""",
+    unsafe_allow_html=True,
 )
 
 if "mensaje_alerta" not in st.session_state:
@@ -301,8 +325,12 @@ if "ordenes_en_atencion" not in st.session_state:
 
 st.title("⚙️ Sistema de Órdenes de Trabajo (Fase Beta) - Avangard Labs")
 
-# --- MENÚ LATERAL: 4 CATEGORÍAS DE USUARIOS ---
-st.sidebar.image("https://img.icons8.com/color/96/maintenance.png", width=80)
+# --- MENÚ LATERAL CON INTEGRACIÓN DEL LOGOTIPO ---
+# Usamos el logo que proporcionaste para la cabecera lateral
+st.sidebar.image(
+    "https://i.ibb.co/306915j/logo-avangard.png"
+)  # O puedes colocar tu imagen local/enlace
+st.sidebar.markdown("---")
 st.sidebar.title("Selección de Rol [BETA]")
 
 categoria_usuario = st.sidebar.selectbox(
