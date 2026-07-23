@@ -527,6 +527,7 @@ elif categoria_usuario == "👷‍♂️ Órdenes de trabajo Abiertas y en Esper
               else (
                   row["Tecnico"]
                   if row["Tecnico"] != "Pendiente de Asignar"
+                  and row["Tecnico"] != "Pendiente"
                   else "Técnico"
               )
           )
@@ -603,13 +604,15 @@ elif categoria_usuario == "👷‍♂️ Órdenes de trabajo Abiertas y en Esper
                       )
                       nota_final_espera = motivo_espera + desc_tec
 
-                      # Al poner en espera, liberamos al técnico poniendo 'Pendiente' o desvinculándolo
+                      # Al poner en espera, liberamos al técnico regresando el campo a 'Pendiente de Asignar'
                       datos_espera = {
-                          "Tecnico": (
-                              f"Pendiente (Esperando Refacción/Externo)"
-                          ),
+                          "Tecnico": "Pendiente de Asignar",
                           "TipoMantenimiento": clasificacion_trabajo,
-                          "HoraRecepcion": row["HoraEmision"],
+                          "HoraRecepcion": (
+                              row["HoraEmision"]
+                              if row["HoraEmision"] != "--:--"
+                              else datetime.now().strftime("%H:%M")
+                          ),
                           "HoraCierre": "--:--",
                           "HoraConformidad": "--:--",
                           "MinutosEspera": 0,
@@ -668,7 +671,7 @@ elif categoria_usuario == "👷‍♂️ Órdenes de trabajo Abiertas y en Esper
                         )
 
                         datos_actualizados = {
-                            "Tecnico": tec_activo,  # Guardamos quién lo cerró
+                            "Tecnico": tec_activo,  # Guardamos quién cerró la orden
                             "TipoMantenimiento": clasificacion_trabajo,
                             "HoraRecepcion": h_rec,
                             "HoraCierre": h_cie,
