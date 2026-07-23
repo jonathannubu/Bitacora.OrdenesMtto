@@ -11,6 +11,7 @@ DB_FILE = "bitacora_beta.db"
 TECNICOS_FILE = "tecnicos_beta.csv"
 AREAS_FILE = "areas_beta.csv"
 DEPTOS_FILE = "departamentos_beta.csv"
+EQUIPOS_FILE = "equipos_beta.csv"
 
 
 # --- CONFIGURACIÓN DE BASE DE DATOS (CERO PÉRDIDA DE DATOS) ---
@@ -526,6 +527,36 @@ def guardar_areas_df(lista_areas):
     df_area.to_csv(AREAS_FILE, index=False)
 
 
+# Gestión de Equipos por Área
+def cargar_equipos_df():
+    if os.path.exists(EQUIPOS_FILE):
+        df_eq = pd.read_csv(EQUIPOS_FILE, dtype=str)
+        df_eq["Area"] = df_eq["Area"].fillna("").astype(str).str.strip()
+        df_eq["Equipo"] = df_eq["Equipo"].fillna("").astype(str).str.strip()
+        return df_eq
+    else:
+        df_eq = pd.DataFrame({
+            "Area": [
+                "Línea 1 - Envasado",
+                "Línea 1 - Envasado",
+                "Línea 2 - Producción",
+                "Línea 3 - Empaque",
+            ],
+            "Equipo": [
+                "Envasadora Principal",
+                "Banda Transportadora 1",
+                "Mezcladora de Tolva",
+                "Encartonadora Automática",
+            ],
+        })
+        df_eq.to_csv(EQUIPOS_FILE, index=False)
+        return df_eq
+
+
+def guardar_equipos_df(df):
+    df.to_csv(EQUIPOS_FILE, index=False)
+
+
 # Inicializar Base de Datos Beta
 inicializar_bd()
 
@@ -674,11 +705,19 @@ else:
 
         with st.form("form_solicitud_produccion"):
             area_sol = st.selectbox("Área / Línea", lista_areas)
+            
+            # Cargar equipos dinámicamente según el área seleccionada
+            df_eq_disp = cargar_equipos_df()
+            if area_sol != "Selecciona un área / línea...":
+                equipos_filtrados = df_eq_disp[df_eq_disp["Area"] == area_sol]["Equipo"].tolist()
+            else:
+                equipos_filtrados = []
+
+            lista_equipos_sel = ["Selecciona un equipo..."] + equipos_filtrados
+            equipo_sol = st.selectbox("Equipo o Máquina", lista_equipos_sel)
+
             turno_sol = st.selectbox(
                 "Turno Actual", ["Matutino", "Vespertino", "Nocturno"]
-            )
-            equipo_sol = st.text_input(
-                "Equipo o Máquina", placeholder="Ej. Línea 2 - Envasadora"
             )
 
             num_ot_generado = obtener_siguiente_folio()
@@ -698,8 +737,10 @@ else:
             if submitted_sol:
                 if area_sol == "Selecciona un área / línea...":
                     st.error("Selecciona el área o línea correspondiente.")
-                elif not equipo_sol or not desc_sol:
-                    st.warning("Completa el equipo y la descripción de la falla.")
+                elif equipo_sol == "Selecciona un equipo...":
+                    st.error("Selecciona el equipo o máquina correspondiente.")
+                elif not desc_sol:
+                    st.warning("Completa la descripción de la falla.")
                 else:
                     nueva_ot = {
                         "Fecha": datetime.now().strftime("%Y-%m-%d"),
@@ -1044,11 +1085,12 @@ else:
             " órdenes de la base de datos."
         )
 
-        tab_admin1, tab_admin2, tab_admin3, tab_admin4 = st.tabs([
+        tab_admin1, tab_admin2, tab_admin3, tab_admin4, tab_admin5 = st.tabs([
             "📋 Órdenes de Trabajo",
             "👷‍♂️ Gestión de Técnicos",
             "🏢 Gestión de Departamentos",
             "📍 Gestión de Áreas / Líneas",
+            "⚙️ Gestión de Equipos",
         ])
 
         with tab_admin1:
@@ -1196,7 +1238,6 @@ else:
             st.markdown("### Alta y Control de Áreas / Líneas")
             lista_areas_admin = cargar_areas()
             
-            # Convertir la lista a DataFrame para mostrarla bonita con st.dataframe
             df_areas_admin = pd.DataFrame({"Área / Línea": lista_areas_admin})
             st.dataframe(df_areas_admin, use_container_width=True)
 
@@ -1232,4 +1273,68 @@ else:
                     lista_areas_admin.remove(area_a_borrar)
                     guardar_areas_df(lista_areas_admin)
                     st.success("✅ Área / Línea eliminada correctamente.")
+                    st.rerun()
+
+        with tab_admin5:
+            st.markdown("### Alta y Control de Equipos por Área / Línea")
+            df_eq_admin = cargar_equipos_df()
+            st.dataframe(df_eq_admin, use_container_width=True)
+
+            lista_areas_admin = cargar_areas()
+
+            with st.form("form_agregar_equipo"):
+                st.markdown("#### Registrar Nuevo Equipo / Máquina")
+                eq_area_sel = st.selectbox("Área / Línea Correspondiente", lista_areas_admin)
+                nuevo_equipo_nombre = st.text_input(
+                    "Nombre Oficial del Equipo / Máquina",
+                    placeholder="Ej. Envasadora Principal"
+                )
+                btn_add_eq = st.form_submit_button(
+                    "Guardar Equipo", use_container_width=True
+                )
+
+                if btn_add_eq:
+                    if not nuevo_equipo_nombre:
+                        st.warning("Ingresa el nombre del equipo.")
+                    else:
+                        nombre_limpio = nuevo_equipo_nombre.strip()
+                        # Validar si ya existe exactamente el mismo equipo en esa área
+                        existente = not df_eq_admin[
+                            (df_eq_admin["Area"] == eq_area_sel) & 
+                            (df_eq_admin["Equipo"].str.lower() == nombre_limpio.lower())
+                        ].empty
+
+                        if existente:
+                            st.error("Ese equipo ya se encuentra registrado en esta área.")
+                        else:
+                            nueva_fila_eq = pd.DataFrame({
+                                "Area": [eq_area_sel],
+                                "Equipo": [nombre_limpio],
+                            })
+                            df_eq_admin = pd.concat(
+                                [df_eq_admin, nueva_fila_eq], ignore_index=True
+                            )
+                            guardar_equipos_df(df_eq_admin)
+                            st.success(
+                                f"✅ Equipo '{nombre_limpio}' agregado"
+                                f" correctamente a '{eq_area_sel}'."
+                            )
+                            st.rerun()
+
+            if not df_eq_admin.empty:
+                st.markdown("#### Eliminar Equipo / Máquina")
+                # Crear opciones combinadas para identificar fácil qué borrar
+                opciones_borrar = [
+                    f"{row['Area']} ➔ {row['Equipo']}" for _, row in df_eq_admin.iterrows()
+                ]
+                eq_a_borrar_str = st.selectbox(
+                    "Selecciona el Equipo a Eliminar", opciones_borrar
+                )
+                if st.button("🗑️ Eliminar Equipo Seleccionado"):
+                    area_b, equipo_b = eq_a_borrar_str.split(" ➔ ")
+                    df_eq_admin = df_eq_admin[
+                        ~((df_eq_admin["Area"] == area_b) & (df_eq_admin["Equipo"] == equipo_b))
+                    ]
+                    guardar_equipos_df(df_eq_admin)
+                    st.success("✅ Equipo eliminado correctamente.")
                     st.rerun()
