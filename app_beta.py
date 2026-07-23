@@ -805,65 +805,87 @@ elif categoria_usuario == "📊 Visualizador / Gerencia":
             if "Departamento" in row and pd.notna(row["Departamento"])
             else "N/D"
         )
+        estado_ot = str(row["Estado"]).strip()
 
-        with st.expander(
-            f"[{row['NumOrden']}] Depto: {depto_txt} | Área: {row['Area']} |"
-            f" Equipo: {row['Equipo']} | Estado: **{row['Estado']}**"
-        ):
+        # Determinación de color/estilo según el estado y visto bueno
+        if ya_conforme:
+          icono_estado = "🟢"
+          sufijo_estado = "**[Cerrada con Visto Bueno]**"
+        elif estado_ot == "Abierta":
+          icono_estado = "🔴"
+          sufijo_estado = "**[Abierta]**"
+        elif estado_ot == "En Espera":
+          icono_estado = "🟠"
+          sufijo_estado = "**[En Espera]**"
+        else:
+          icono_estado = "🔵"
+          sufijo_estado = f"**[{estado_ot}]**"
+
+        etiqueta_exp = (
+            f"{icono_estado} [{row['NumOrden']}] Depto: {depto_txt} | Área:"
+            f" {row['Area']} | Equipo: {row['Equipo']} | Estado:"
+            f" {sufijo_estado}"
+        )
+
+        with st.expander(etiqueta_exp):
           st.write(f"**Técnico / Responsable:** {row['Tecnico']}")
           st.write(f"**Clasificación de Trabajo:** {row['TipoMantenimiento']}")
           st.write(f"**Diagnóstico / Nota:** {row['Descripcion']}")
 
           if row["Estado"] == "Cerrada":
-            with st.form(f"form_conformidad_{row['id']}"):
-              check_conf = st.checkbox(
-                  "✅ Dar Visto Bueno / Conformidad al Trabajo Realizado",
-                  value=ya_conforme,
+            if ya_conforme:
+              st.success(
+                  f"✅ Esta orden ya cuenta con Visto Bueno / Conformidad"
+                  f" registrada a las **{estado_con_actual}** por el"
+                  f" departamento **{depto_txt}**."
               )
-              pass_depto_conf = st.text_input(
-                  f"🔒 Contraseña del departamento solicitante ({depto_txt}):",
-                  type="password",
-                  key=f"pass_conf_depto_{row['id']}",
-              )
-              btn_guardar_conf = st.form_submit_button(
-                  "Guardar Conformidad del Solicitante"
-              )
+            else:
+              with st.form(f"form_conformidad_{row['id']}"):
+                st.markdown(
+                    "🔒 **Validación de Conformidad por Departamento**"
+                )
+                pass_depto_conf = st.text_input(
+                    f"Contraseña del departamento que lanzó la orden"
+                    f" ({depto_txt}):",
+                    type="password",
+                    key=f"pass_conf_depto_{row['id']}",
+                )
+                btn_guardar_conf = st.form_submit_button(
+                    "Dar Visto Bueno (Conformidad)"
+                )
 
-              if btn_guardar_conf:
-                match_dep = df_deptos_system[
-                    df_deptos_system["Departamento"] == depto_txt
-                ]
-                if match_dep.empty:
-                  st.error(f"El departamento '{depto_txt}' no está registrado.")
-                else:
-                  pass_correcta_dep = str(
-                      match_dep["Password"].values[0]
-                  ).strip()
-                  pass_ingresada_dep = str(pass_depto_conf).strip().replace(
-                      ".0", ""
-                  )
-
-                  if pass_ingresada_dep != pass_correcta_dep:
-                    st.error(
-                        f"Contraseña incorrecta para el departamento"
-                        f" '{depto_txt}'."
-                    )
+                if btn_guardar_conf:
+                  if not pass_depto_conf:
+                    st.error("Debes ingresar la contraseña del departamento.")
                   else:
-                    if check_conf:
-                      hora_conf_actual = datetime.now().strftime("%H:%M")
-                      actualizar_conformidad_db(row["id"], hora_conf_actual)
-                      st.session_state["mensaje_alerta"] = (
-                          f"✅ Conformidad registrada correctamente por el"
-                          f" departamento {depto_txt}."
+                    match_dep = df_deptos_system[
+                        df_deptos_system["Departamento"] == depto_txt
+                    ]
+                    if match_dep.empty:
+                      st.error(
+                          f"El departamento '{depto_txt}' no está registrado."
                       )
-                      st.rerun()
                     else:
-                      actualizar_conformidad_db(row["id"], "--:--")
-                      st.session_state["mensaje_alerta"] = (
-                          f"ℹ️ Se removió la conformidad de la orden"
-                          f" {row['NumOrden']}."
+                      pass_correcta_dep = str(
+                          match_dep["Password"].values[0]
+                      ).strip()
+                      pass_ingresada_dep = str(pass_depto_conf).strip().replace(
+                          ".0", ""
                       )
-                      st.rerun()
+
+                      if pass_ingresada_dep != pass_correcta_dep:
+                        st.error(
+                            f"Contraseña incorrecta para el departamento"
+                            f" '{depto_txt}'."
+                        )
+                      else:
+                        hora_conf_actual = datetime.now().strftime("%H:%M")
+                        actualizar_conformidad_db(row["id"], hora_conf_actual)
+                        st.session_state["mensaje_alerta"] = (
+                            f"✅ Conformidad registrada correctamente por el"
+                            f" departamento {depto_txt}."
+                        )
+                        st.rerun()
           else:
             st.info(
                 f"La orden se encuentra en estado: **{row['Estado']}**. La"
