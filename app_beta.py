@@ -320,12 +320,8 @@ if categoria_usuario == "📝 Solicitante (Producción)":
   st.subheader("📝 Solicitar Orden de Mantenimiento (Helpdesk)")
   st.markdown(
       "Reporta una falla o necesidad de ajuste. Ingresa tu contraseña de"
-      " departamento autorizada."
+      " departamento autorizada al enviar."
   )
-
-  if st.session_state["mensaje_alerta"]:
-    st.success(st.session_state["mensaje_alerta"])
-    st.session_state["mensaje_alerta"] = None
 
   df_deptos_system = cargar_departamentos_df()
   lista_departamentos = ["Selecciona un departamento..."] + list(
@@ -339,15 +335,12 @@ if categoria_usuario == "📝 Solicitante (Producción)":
       depto_sol = st.selectbox(
           "Departamento que solicita", lista_departamentos
       )
-      pass_depto_input = st.text_input(
-          "Contraseña de Departamento", type="password"
-      )
     with col2:
       area_sol = st.selectbox("Área (configurada por admin)", lista_areas)
-      turno_sol = st.selectbox(
-          "Turno Actual", ["Matutino", "Vespertino", "Nocturno"]
-      )
 
+    turno_sol = st.selectbox(
+        "Turno Actual", ["Matutino", "Vespertino", "Nocturno"]
+    )
     equipo_sol = st.text_input(
         "Equipo o Máquina", placeholder="Ej. Línea 2 - Envasadora"
     )
@@ -362,9 +355,27 @@ if categoria_usuario == "📝 Solicitante (Producción)":
         ),
     )
 
-    submitted_sol = st.form_submit_button(
-        "Enviar Solicitud a Mantenimiento", use_container_width=True
-    )
+    st.markdown("---")
+    st.markdown("🔒 **Validación de Envío**")
+
+    # Contraseña, botón y alerta visual juntos en las columnas inferiores
+    col_env1, col_env2, col_env3 = st.columns([1, 1, 1.5])
+    with col_env1:
+      pass_depto_input = st.text_input(
+          "Contraseña de Departamento", type="password"
+      )
+    with col_env2:
+      st.markdown(
+          "<br>", unsafe_allow_html=True
+      )  # Espaciado estético para alinear con el input
+      submitted_sol = st.form_submit_button(
+          "Enviar Solicitud a Mantenimiento", use_container_width=True
+      )
+    with col_env3:
+      st.markdown("<br>", unsafe_allow_html=True)
+      if st.session_state["mensaje_alerta"]:
+        st.success(st.session_state["mensaje_alerta"])
+        st.session_state["mensaje_alerta"] = None
 
     if submitted_sol:
       if depto_sol == "Selecciona un departamento...":
@@ -405,8 +416,7 @@ if categoria_usuario == "📝 Solicitante (Producción)":
             }
             guardar_nueva_solicitud(nueva_ot)
             st.session_state["mensaje_alerta"] = (
-                f"✅ ¡Solicitud {num_ot_generado} enviada con éxito! Mantenimiento"
-                " ha sido alertado."
+                f"✅ ¡Solicitud {num_ot_generado} enviada con éxito!"
             )
             st.rerun()
           else:
