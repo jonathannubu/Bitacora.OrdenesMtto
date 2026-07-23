@@ -711,6 +711,100 @@ else:
                     guardar_nueva_solicitud(nueva_ot)
                     st.success(f"✅ ¡Solicitud {num_ot_generado} enviada con éxito!")
 
+        st.markdown("---")
+        st.subheader(f"📋 Mis Solicitudes ({depto_actual})")
+        df_mis_ots = cargar_datos_db(
+            "SELECT * FROM ordenes WHERE Departamento = ? ORDER BY id DESC",
+            (depto_actual,),
+        )
+        if df_mis_ots.empty:
+            st.info("No has generado solicitudes todavía.")
+        else:
+            st.dataframe(
+                df_mis_ots[
+                    [
+                        "NumOrden",
+                        "Fecha",
+                        "Area",
+                        "Equipo",
+                        "Estado",
+                        "Tecnico",
+                    ]
+                ],
+                use_container_width=True,
+            )
+
+            # Sección para dar conformidad si la OT está lista
+            ots_pend_conf = df_mis_ots[
+                df_mis_ots["Estado"].isin(["Atendida", "Completada"])
+            ]
+            if not ots_pend_conf.empty:
+                st.markdown(
+                    "#### ✍️ Dar Conformidad y Evaluar Servicio Técnico"
+                )
+                folio_conf = st.selectbox(
+                    "Selecciona el Folio para Evaluar",
+                    ots_pend_conf["NumOrden"].tolist(),
+                )
+                row_c = ots_pend_conf[
+                    ots_pend_conf["NumOrden"] == folio_conf
+                ].iloc[0]
+
+                with st.form(f"form_conf_{folio_conf}"):
+                    st.write(f"Evaluando orden: **{folio_conf}**")
+                    ev_epp = st.selectbox(
+                        "¿Utilizó equipo de protección personal (EPP)?",
+                        ["Sí", "No"],
+                    )
+                    ev_limpia = st.selectbox(
+                        "¿Entregó el área limpia y ordenada?", ["Sí", "No"]
+                    )
+                    ev_actitud = st.selectbox(
+                        "¿Mostró actitud de servicio y profesionalismo?",
+                        ["Sí", "No"],
+                    )
+                    ev_recom = st.selectbox(
+                        "¿Recomendó acciones para su no ocurrencia?",
+                        ["Sí", "No"],
+                    )
+                    ev_causa = st.selectbox(
+                        "¿Explicó la causa que originó la falla?", ["Sí", "No"]
+                    )
+                    comentario_eval = st.text_area(
+                        "Comentarios adicionales (Opcional)"
+                    )
+
+                    btn_guardar_conf = st.form_submit_button(
+                        "Confirmar y Cerrar Orden"
+                    )
+                    if btn_guardar_conf:
+                        evals = {
+                            "EPP": ev_epp,
+                            "AreaLimpia": ev_limpia,
+                            "Actitud": ev_actitud,
+                            "Recomendacion": ev_recom,
+                            "Causa": ev_causa,
+                        }
+                        hora_con_actual = datetime.now().strftime("%H:%M")
+                        actualizar_conformidad_con_evaluacion_db(
+                            row_c["id"],
+                            hora_con_actual,
+                            evals,
+                            comentario_eval,
+                        )
+                        # Marcar estado como Cerrada definitiva
+                        with sqlite3.connect(DB_FILE) as conn:
+                            cursor = conn.cursor()
+                            cursor.execute(
+                                "UPDATE ordenes SET Estado = 'Cerrada' WHERE id = ?",
+                                (row_c["id"],),
+                            )
+                            conn.commit()
+                        st.success(
+                            "✅ ¡Conformidad registrada y Orden Cerrada exitosamente!"
+                        )
+                        st.rerun()
+
     # ---------------------------------------------------------
     # CATEGORÍA 2: TÉCNICO DE MANTENIMIENTO
     # ---------------------------------------------------------
@@ -730,10 +824,131 @@ else:
             st.info("🎉 ¡Excelente trabajo! No hay órdenes pendientes ni en espera.")
         else:
             for index, row in df_pendientes.iterrows():
-                st.write(
-                    f"**Folio:** {row['NumOrden']} | **Área:** {row['Area']} |"
-                    f" **Equipo:** {row['Equipo']} | **Estado:** {row['Estado']}"
+                estado_clase = (
+                    "card-espera"
+                    if row["Estado"] == "En Espera"
+                    else "card-abierta"
                 )
+                st.markdown(
+                    f"""
+                    <div class="{estado_clase}">
+                        <b>Folio:</b> {row['NumOrden']} | <b>Área:</b> {row['Area']} | <b>Equipo:</b> {row['Equipo']}<br>
+                        <b>Descripción:</b> {row['DescripcionFalla']}<br>
+                        <b>Estado actual:</b> {row['Estado']} | <b>Técnico asignado:</b> {row['Tecnico']}
+                    </div>
+                """,
+                    unsafe_allow_html=True,
+                )
+
+                with st.expander(
+                    f"Atender / Editar Orden #{row['NumOrden']}"
+                ):
+                    with st.form(f"form_atender_{row['id']}"):
+                        tec_asignado = st.text_input(
+                            "Técnico Responsable",
+                            value=(
+                                tec_actual
+                                if row["Tecnico"] == "Pendiente de Asignar"
+                                else row["Tecnico"]
+                            ),
+                        )
+                        tipo_mtto = st.selectbox(
+                            "Tipo de Mantenimiento",
+                            ["Correctivo", "Preventivo", "Predictivo", "Mejora"],
+                            index=(
+                                0
+                                if row["TipoMantenimiento"]
+                                not in [
+                                    "Preventivo",
+                                    "Predictivo",
+                                    "Mejora",
+                                ]
+                                else [
+                                    "Correctivo",
+                                    "Preventivo",
+                                    "Predictivo",
+                                    "Mejora",
+                                ].index(row["TipoMantenimiento"])
+                            ),
+                        )
+
+                        col_h1, col_h2, col_h3 = st.columns(3)
+                        with col_h1:
+                            h_rec = st.text_input(
+                                "Hora Recepción (HH:MM)",
+                                value=(
+                                    datetime.now().strftime("%H:%M")
+                                    if row["HoraRecepcion"] == "--:--"
+                                    else row["HoraRecepcion"]
+                                ),
+                            )
+                        with col_h2:
+                            f_cierre_val = st.text_input(
+                                "Fecha Cierre (AAAA-MM-DD)",
+                                value=(
+                                    datetime.now().strftime("%Y-%m-%d")
+                                    if not row["FechaCierre"]
+                                    else row["FechaCierre"]
+                                ),
+                            )
+                        with col_h3:
+                            h_cie = st.text_input(
+                                "Hora Cierre (HH:MM)",
+                                value=(
+                                    datetime.now().strftime("%H:%M")
+                                    if row["HoraCierre"] == "--:--"
+                                    else row["HoraCierre"]
+                                ),
+                            )
+
+                        trabajo_tec = st.text_area(
+                            "Trabajo Realizado / Diagnóstico Técnico",
+                            value=(
+                                ""
+                                if row["TrabajoRealizado"]
+                                == "Pendiente de atención técnica"
+                                else row["TrabajoRealizado"]
+                            ),
+                        )
+                        nuevo_estado = st.selectbox(
+                            "Estado de la OT",
+                            [
+                                "Abierta",
+                                "En Espera",
+                                "Atendida",
+                                "Completada",
+                            ],
+                            index=2,
+                        )
+
+                        btn_guardar_tec = st.form_submit_button(
+                            "Guardar Avances Técnicos"
+                        )
+                        if btn_guardar_tec:
+                            # Calcular tiempos aproximados
+                            min_esp = 15  # Estimado por defecto o cálculo
+                            min_trab = 45
+                            min_tot = min_esp + min_trab
+
+                            datos_act = {
+                                "Tecnico": tec_asignado,
+                                "TipoMantenimiento": tipo_mtto,
+                                "HoraRecepcion": h_rec,
+                                "HoraCierre": h_cie,
+                                "FechaCierre": f_cierre_val,
+                                "HoraConformidad": row["HoraConformidad"],
+                                "MinutosEspera": min_esp,
+                                "MinutosTrabajo": min_trab,
+                                "MinutosTotalOT": min_tot,
+                                "TrabajoRealizado": trabajo_tec,
+                                "Estado": nuevo_estado,
+                            }
+                            actualizar_orden_db(row["id"], datos_act)
+                            st.success(
+                                f"✅ ¡Orden {row['NumOrden']} actualizada con"
+                                " éxito!"
+                            )
+                            st.rerun()
 
     # ---------------------------------------------------------
     # CATEGORÍA 3: VISUALIZADOR
@@ -765,7 +980,9 @@ else:
                 )
             with col3:
                 cerradas_count = len(
-                    df_todas[df_todas["Estado"].isin(["Cerrada", "Completada"])]
+                    df_todas[
+                        df_todas["Estado"].isin(["Cerrada", "Completada"])
+                    ]
                 )
                 st.metric(label="Órdenes Cerradas", value=cerradas_count)
 
@@ -778,6 +995,7 @@ else:
                     "Todos",
                     "Abierta",
                     "En Espera",
+                    "Atendida",
                     "Cerrada",
                     "Completada",
                 ],
@@ -811,8 +1029,8 @@ else:
     elif rol == "Admin":
         st.subheader("🛠️ Panel de Administración General")
         st.markdown(
-            "Control total del sistema, catálogos y registros de la base de"
-            " datos."
+            "Control total del sistema, catálogos, registros y eliminación de"
+            " órdenes de la base de datos."
         )
 
         df_admin = cargar_datos_db()
@@ -820,3 +1038,41 @@ else:
             "Total de registros históricos en la Base de Datos", len(df_admin)
         )
         st.dataframe(df_admin, use_container_width=True)
+
+        st.markdown("---")
+        st.markdown("### 🗑️ Gestión y Eliminación de Órdenes")
+        st.warning(
+            "⚠️ Precaución: Eliminar una orden la borrará de forma permanente de"
+            " la base de datos."
+        )
+
+        if not df_admin.empty:
+            folio_a_borrar = st.selectbox(
+                "Selecciona el Folio de la Orden a Eliminar",
+                df_admin["NumOrden"].tolist(),
+                key="select_borrar_folio",
+            )
+
+            if folio_a_borrar:
+                row_borrar = df_admin[
+                    df_admin["NumOrden"] == folio_a_borrar
+                ].iloc[0]
+                st.info(
+                    f"Información de la Orden seleccionada: **Folio {row_borrar['NumOrden']}** |"
+                    f" **Área:** {row_borrar['Area']} | **Equipo:**"
+                    f" {row_borrar['Equipo']} | **Estado:**"
+                    f" {row_borrar['Estado']}"
+                )
+
+                if st.button(
+                    f"❌ Eliminar Permanentemente la Orden {folio_a_borrar}",
+                    type="primary",
+                ):
+                    eliminar_orden_db(row_borrar["id"])
+                    st.success(
+                        f"✅ Orden {folio_a_borrar} eliminada correctamente de la"
+                        " base de datos."
+                    )
+                    st.rerun()
+        else:
+            st.info("No hay registros disponibles para eliminar.")
