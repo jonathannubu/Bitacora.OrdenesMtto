@@ -1195,7 +1195,10 @@ else:
         with tab_admin4:
             st.markdown("### Alta y Control de Áreas / Líneas")
             lista_areas_admin = cargar_areas()
-            st.write(lista_areas_admin)
+            
+            # Convertir la lista a DataFrame para mostrarla bonita con st.dataframe
+            df_areas_admin = pd.DataFrame({"Área / Línea": lista_areas_admin})
+            st.dataframe(df_areas_admin, use_container_width=True)
 
             with st.form("form_agregar_area"):
                 st.markdown("#### Registrar Nueva Área / Línea")
