@@ -481,22 +481,35 @@ else:
     if df_mis_ordenes.empty:
       st.info("No tienes órdenes registradas en este momento.")
     else:
-      # Separar en vistas o mostrar expanders para que puedan dar conformidad si ya están cerradas/atendidas
       for index, row in df_mis_ordenes.iterrows():
         ot_id = row["id"]
         estado_ot = row["Estado"]
         h_conf = str(row["HoraConformidad"])
 
+        # Marcado con colores según el estatus y visto bueno
+        if h_conf != "--:--" and h_conf:
+          color_badge = "🟢 **[Visto Bueno Otorgado]**"
+          borde_markdown = (
+              ":green[**Orden Completada y Validada con Conformidad**]"
+          )
+        elif estado_ot == "Cerrada":
+          color_badge = "🟡 **[Cerrada - Pendiente de Visto Bueno]**"
+          borde_markdown = ":orange[**Atendida por Mantenimiento**]"
+        else:
+          color_badge = f"🔵 **[{estado_ot}]**"
+          borde_markdown = f"**Estado:** {estado_ot}"
+
         with st.expander(
             f"[{row['NumOrden']}] Área: {row['Area']} | Equipo:"
-            f" {row['Equipo']} | Estado: **{estado_ot}**"
+            f" {row['Equipo']} | {color_badge}"
         ):
+          st.markdown(borde_markdown)
           st.write(f"**Técnico Atendió:** {row['Tecnico']}")
           st.write(f"**Descripción:** {row['Descripcion']}")
           st.write(f"**Hora de Cierre:** {row['HoraCierre']}")
           st.write(f"**Visto Bueno / Conformidad:** {h_conf}")
 
-          # Si la orden está cerrada o lista y aún no tiene conformidad, mostrar botón para dar Visto Bueno
+          # Si la orden está cerrada y aún no tiene conformidad, mostrar botón para dar Visto Bueno
           if estado_ot == "Cerrada" and (h_conf == "--:--" or not h_conf):
             if st.button(
                 f"Dar Visto Bueno (Conformidad) - {row['NumOrden']}",
