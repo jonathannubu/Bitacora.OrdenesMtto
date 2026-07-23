@@ -128,14 +128,6 @@ def actualizar_conformidad_db(id_orden, hora_con):
   conn.close()
 
 
-def eliminar_orden_db(id_orden):
-  conn = sqlite3.connect(DB_FILE)
-  cursor = conn.cursor()
-  cursor.execute("DELETE FROM ordenes WHERE id=?", (id_orden,))
-  conn.commit()
-  conn.close()
-
-
 # Gestión de Técnicos (CSV auxiliar beta)
 def cargar_tecnicos_df():
   if os.path.exists(TECNICOS_FILE):
@@ -293,664 +285,493 @@ st.set_page_config(
 if "mensaje_alerta" not in st.session_state:
   st.session_state["mensaje_alerta"] = None
 
-if "hora_default" not in st.session_state:
-  st.session_state["hora_default"] = datetime.now().strftime("%H:%M")
-
 if "ordenes_en_atencion" not in st.session_state:
   st.session_state["ordenes_en_atencion"] = {}
 
+# Control de Sesión Global
+if "sesion_activa" not in st.session_state:
+  st.session_state["sesion_activa"] = False
+if "rol_usuario" not in st.session_state:
+  st.session_state["rol_usuario"] = None
+if "nombre_usuario" not in st.session_state:
+  st.session_state["nombre_usuario"] = None
+
 st.title("⚙️ Sistema de Órdenes de Trabajo (Fase Beta) - Avangard Labs")
 
-# --- MENÚ LATERAL ---
-st.sidebar.title("Selección de Rol [BETA]")
+# --- MENÚ LATERAL Y CONTROL DE SESIÓN ---
+st.sidebar.title("Control de Acceso [BETA]")
 
-categoria_usuario = st.sidebar.selectbox(
-    "¿Quién está ingresando?",
-    [
-        "📝 Solicitante (Producción)",
-        "👷‍♂️ Órdenes de trabajo Abiertas y en Espera",
-        "📊 Visualizador",
-        "🛠️ Administrador (Gestión Total)",
-    ],
-)
-st.sidebar.markdown("---")
-
-# ---------------------------------------------------------
-# CATEGORÍA 1: SOLICITANTE (PRODUCCIÓN)
-# ---------------------------------------------------------
-if categoria_usuario == "📝 Solicitante (Producción)":
-  st.subheader("📝 Solicitar Orden de Mantenimiento (Helpdesk)")
-  st.markdown(
-      "Reporta una falla o necesidad de ajuste. Ingresa tu contraseña de"
-      " departamento autorizada al enviar."
+if not st.session_state["sesion_activa"]:
+  st.sidebar.info("Inicia sesión para acceder a tu módulo correspondiente.")
+  tipo_login = st.sidebar.selectbox(
+      "Selecciona tu Rol",
+      [
+          "📝 Solicitante (Producción)",
+          "👷‍♂️ Técnico de Mantenimiento",
+          "📊 Visualizador",
+          "🛠️ Administrador",
+      ],
   )
 
   df_deptos_system = cargar_departamentos_df()
-  lista_departamentos = ["Selecciona un departamento..."] + list(
-      df_deptos_system["Departamento"]
+  df_tec_system = cargar_tecnicos_df()
+
+  with st.sidebar.form("form_login_global"):
+    if "Solicitante" in tipo_login:
+      usuario_sel = st.selectbox(
+          "Departamento", df_deptos_system["Departamento"]
+      )
+    elif "Técnico" in tipo_login:
+      usuario_sel = st.selectbox("Técnico", df_tec_system["Tecnico"])
+    else:
+      usuario_sel = "Acceso General"
+
+    pass_ingresada = st.text_input("Contraseña", type="password")
+    btn_entrar = st.form_submit_button("Iniciar Sesión", use_container_width=True)
+
+    if btn_entrar:
+      if "Solicitante" in tipo_login:
+        match = df_deptos_system[
+            df_deptos_system["Departamento"] == usuario_sel
+        ]
+        if (
+            not match.empty
+            and str(match["Password"].values[0]).strip()
+            == pass_ingresada.strip().replace(".0", "")
+        ):
+          st.session_state["sesion_activa"] = True
+          st.session_state["rol_usuario"] = "Solicitante"
+          st.session_state["nombre_usuario"] = usuario_sel
+          st.rerun()
+        else:
+          st.error("Contraseña incorrecta.")
+
+      elif "Técnico" in tipo_login:
+        match = df_tec_system[df_tec_system["Tecnico"] == usuario_sel]
+        if (
+            not match.empty
+            and str(match["Password"].values[0]).strip()
+            == pass_ingresada.strip().replace(".0", "")
+        ):
+          st.session_state["sesion_activa"] = True
+          st.session_state["rol_usuario"] = "Tecnico"
+          st.session_state["nombre_usuario"] = usuario_sel
+          st.rerun()
+        else:
+          st.error("Contraseña incorrecta.")
+
+      elif "Visualizador" in tipo_login:
+        # Visualizador libre o con contraseña general si lo deseas
+        st.session_state["sesion_activa"] = True
+        st.session_state["rol_usuario"] = "Visualizador"
+        st.session_state["nombre_usuario"] = "Visualizador"
+        st.rerun()
+
+      elif "Administrador" in tipo_login:
+        if pass_ingresada.strip() == "avangardmtto22":
+          st.session_state["sesion_activa"] = True
+          st.session_state["rol_usuario"] = "Admin"
+          st.session_state["nombre_usuario"] = "Administrador"
+          st.rerun()
+        else:
+          st.error("Contraseña de administrador incorrecta.")
+else:
+  st.sidebar.success(
+      f"Sesión activa:\n**{st.session_state['nombre_usuario']}**"
   )
-  lista_areas = ["Selecciona un área..."] + cargar_areas()
+  if st.sidebar.button("Cerrar Sesión", use_container_width=True):
+    st.session_state["sesion_activa"] = False
+    st.session_state["rol_usuario"] = None
+    st.session_state["nombre_usuario"] = None
+    st.rerun()
 
-  with st.form("form_solicitud_produccion"):
-    col1, col2 = st.columns(2)
-    with col1:
-      depto_sol = st.selectbox(
-          "Departamento que solicita", lista_departamentos
+st.sidebar.markdown("---")
+
+# Validar en qué sección estamos según la sesión activa
+if not st.session_state["sesion_activa"]:
+  st.warning(
+      "👈 Por favor, inicia sesión en el menú lateral para usar el sistema."
+  )
+else:
+  rol = st.session_state["rol_usuario"]
+
+  # ---------------------------------------------------------
+  # CATEGORÍA 1: SOLICITANTE (PRODUCCIÓN)
+  # ---------------------------------------------------------
+  if rol == "Solicitante":
+    depto_actual = st.session_state["nombre_usuario"]
+    st.subheader(
+        f"📝 Solicitar Orden de Mantenimiento - Departamento: {depto_actual}"
+    )
+    st.markdown(
+        "Reporta una falla o necesidad de ajuste directamente al área de"
+        " mantenimiento."
+    )
+
+    lista_areas = ["Selecciona un área..."] + cargar_areas()
+
+    with st.form("form_solicitud_produccion"):
+      area_sol = st.selectbox("Área / Nave", lista_areas)
+      turno_sol = st.selectbox(
+          "Turno Actual", ["Matutino", "Vespertino", "Nocturno"]
       )
-    with col2:
-      area_sol = st.selectbox("Área (configurada por admin)", lista_areas)
-
-    turno_sol = st.selectbox(
-        "Turno Actual", ["Matutino", "Vespertino", "Nocturno"]
-    )
-    equipo_sol = st.text_input(
-        "Equipo o Máquina", placeholder="Ej. Línea 2 - Envasadora"
-    )
-
-    num_ot_generado = f"OT-{datetime.now().strftime('%d%H%M%S')}"
-    st.info(f"📌 Folio Asignado Automáticamente: **{num_ot_generado}**")
-
-    desc_sol = st.text_area(
-        "Descripción corta de la falla",
-        placeholder=(
-            "Ej. Se detuvo la banda principal por atasco en sensor..."
-        ),
-    )
-
-    st.markdown("---")
-    st.markdown("🔒 **Validación de Envío**")
-
-    col_env1, col_env2, col_env3 = st.columns([1, 1, 1.5])
-    with col_env1:
-      pass_depto_input = st.text_input(
-          "Contraseña de Departamento", type="password"
+      equipo_sol = st.text_input(
+          "Equipo o Máquina", placeholder="Ej. Línea 2 - Envasadora"
       )
-    with col_env2:
-      st.markdown("<br>", unsafe_allow_html=True)
+
+      num_ot_generado = f"OT-{datetime.now().strftime('%d%H%M%S')}"
+      st.info(f"📌 Folio Asignado Automáticamente: **{num_ot_generado}**")
+
+      desc_sol = st.text_area(
+          "Descripción corta de la falla",
+          placeholder=(
+              "Ej. Se detuvo la banda principal por atasco en sensor..."
+          ),
+      )
+
       submitted_sol = st.form_submit_button(
           "Enviar Solicitud a Mantenimiento", use_container_width=True
       )
-    with col_env3:
-      st.markdown("<br>", unsafe_allow_html=True)
-      if st.session_state["mensaje_alerta"]:
-        st.success(st.session_state["mensaje_alerta"])
-        st.session_state["mensaje_alerta"] = None
 
-    if submitted_sol:
-      if depto_sol == "Selecciona un departamento...":
-        st.error("Selecciona el departamento que solicita.")
-      elif not pass_depto_input:
-        st.error("Ingresa la contraseña de tu departamento.")
-      elif area_sol == "Selecciona un área...":
-        st.error("Selecciona el área correspondiente.")
-      elif not equipo_sol or not desc_sol:
-        st.warning("Completa el equipo y la descripción de la falla.")
-      else:
-        match_dep = df_deptos_system[
-            df_deptos_system["Departamento"] == depto_sol.strip()
-        ]
-        if not match_dep.empty:
-          pass_correcta_dep = str(match_dep["Password"].values[0]).strip()
-          pass_ingresada_dep = str(pass_depto_input).strip().replace(".0", "")
-
-          if pass_ingresada_dep == pass_correcta_dep:
-            nueva_ot = {
-                "Fecha": datetime.now().strftime("%Y-%m-%d"),
-                "Turno": turno_sol,
-                "Tecnico": "Pendiente de Asignar",
-                "Departamento": depto_sol,
-                "Area": area_sol,
-                "Equipo": equipo_sol,
-                "NumOrden": num_ot_generado,
-                "TipoMantenimiento": "Correctivo",
-                "HoraEmision": datetime.now().strftime("%H:%M"),
-                "HoraRecepcion": "--:--",
-                "HoraCierre": "--:--",
-                "HoraConformidad": "--:--",
-                "MinutosEspera": 0,
-                "MinutosTrabajo": 0,
-                "MinutosTotalOT": 0,
-                "Descripcion": desc_sol,
-                "Estado": "Abierta",
-            }
-            guardar_nueva_solicitud(nueva_ot)
-            st.session_state["mensaje_alerta"] = (
-                f"✅ ¡Solicitud {num_ot_generado} enviada con éxito!"
-            )
-            st.rerun()
-          else:
-            st.error("Contraseña de departamento incorrecta.")
+      if submitted_sol:
+        if area_sol == "Selecciona un área...":
+          st.error("Selecciona el área correspondiente.")
+        elif not equipo_sol or not desc_sol:
+          st.warning("Completa el equipo y la descripción de la falla.")
         else:
-          st.error("Departamento no encontrado.")
+          nueva_ot = {
+              "Fecha": datetime.now().strftime("%Y-%m-%d"),
+              "Turno": turno_sol,
+              "Tecnico": "Pendiente de Asignar",
+              "Departamento": depto_actual,
+              "Area": area_sol,
+              "Equipo": equipo_sol,
+              "NumOrden": num_ot_generado,
+              "TipoMantenimiento": "Correctivo",
+              "HoraEmision": datetime.now().strftime("%H:%M"),
+              "HoraRecepcion": "--:--",
+              "HoraCierre": "--:--",
+              "HoraConformidad": "--:--",
+              "MinutosEspera": 0,
+              "MinutosTrabajo": 0,
+              "MinutosTotalOT": 0,
+              "Descripcion": desc_sol,
+              "Estado": "Abierta",
+          }
+          guardar_nueva_solicitud(nueva_ot)
+          st.success(f"✅ ¡Solicitud {num_ot_generado} enviada con éxito!")
 
-# ---------------------------------------------------------
-# CATEGORÍA 2: ÓRDENES DE TRABAJO ABIERTAS Y EN ESPERA
-# ---------------------------------------------------------
-elif categoria_usuario == "👷‍♂️ Órdenes de trabajo Abiertas y en Espera":
-  st.subheader("👷‍♂️ Panel de Órdenes Abiertas y en Espera")
-  st.markdown(
-      "Atiende solicitudes nuevas o gestiona aquellas que están detenidas"
-      " por falta de refacción o servicio externo."
-  )
-
-  if st.session_state["mensaje_alerta"]:
-    st.success(st.session_state["mensaje_alerta"])
-    st.session_state["mensaje_alerta"] = None
-
-  df_pendientes = cargar_datos_db(
-      "SELECT * FROM ordenes WHERE Estado IN ('Abierta', 'En Espera')"
-  )
-
-  if df_pendientes.empty:
-    st.info("🎉 ¡Excelente trabajo! No hay órdenes pendientes ni en espera.")
-  else:
-    st.warning(
-        f"⚠️ Hay **{len(df_pendientes)}** orden(es) en total (Abiertas o en"
-        " Espera)."
+  # ---------------------------------------------------------
+  # CATEGORÍA 2: TÉCNICO DE MANTENIMIENTO
+  # ---------------------------------------------------------
+  elif rol == "Tecnico":
+    tec_actual = st.session_state["nombre_usuario"]
+    st.subheader(f"👷‍♂️ Panel de Trabajo - Técnico: {tec_actual}")
+    st.markdown(
+        "Atiende solicitudes nuevas o gestiona aquellas en espera asignadas a"
+        " ti o disponibles en general."
     )
 
-    df_tec_system = cargar_tecnicos_df()
-    lista_tecs = ["Selecciona tu nombre..."] + list(df_tec_system["Tecnico"])
+    if st.session_state["mensaje_alerta"]:
+      st.success(st.session_state["mensaje_alerta"])
+      st.session_state["mensaje_alerta"] = None
 
-    for index, row in df_pendientes.iterrows():
-      ot_id = row["id"]
-      estado_actual_ot = row["Estado"]
-      tec_en_bd = str(row["Tecnico"]).strip()
-
-      tec_es_valido = (
-          tec_en_bd in df_tec_system["Tecnico"].values
-          and tec_en_bd != "Pendiente de Asignar"
-      )
-
-      atendiendo_activo = st.session_state["ordenes_en_atencion"].get(
-          ot_id, tec_en_bd if tec_es_valido else None
-      )
-
-      etiqueta_exp = (
-          f"🔔 [{row['NumOrden']}] Depto: {row.get('Departamento', 'N/D')} |"
-          f" Área: {row['Area']} | Equipo: {row['Equipo']} | Estado:"
-          f" **{estado_actual_ot}**"
-      )
-
-      with st.expander(etiqueta_exp):
-        st.write(f"**Descripción:** {row['Descripcion']}")
-        st.write(f"**Técnico Registrado:** {row['Tecnico']}")
-
-        if estado_actual_ot == "En Espera":
-          st.error(
-              f"🛑 Esta orden está pausada. Motivo / Diagnóstico parcial:"
-              f" {row['Descripcion']}"
-          )
-
-        if not tec_es_valido and not atendiendo_activo:
-          with st.form(f"form_responsable_{ot_id}"):
-            st.markdown("### 🛠️ Asignar Responsable de Atención")
-            col_r1, col_r2 = st.columns(2)
-            with col_r1:
-              tec_elegido = st.selectbox(
-                  "Técnico Responsable", lista_tecs, key=f"tec_sel_{ot_id}"
-              )
-            with col_r2:
-              pass_tec_responsable = st.text_input(
-                  "Contraseña Personal",
-                  type="password",
-                  key=f"pass_sel_{ot_id}",
-              )
-
-            btn_hacerse_resp = st.form_submit_button(
-                "Marcarme como Responsable / Atender esta Orden",
-                use_container_width=True,
-            )
-
-            if btn_hacerse_resp:
-              if tec_elegido == "Selecciona tu nombre...":
-                st.error("Selecciona tu nombre de técnico.")
-              elif not pass_tec_responsable:
-                st.error("Ingresa tu contraseña personal.")
-              else:
-                match_t = df_tec_system[
-                    df_tec_system["Tecnico"] == tec_elegido.strip()
-                ]
-                if not match_t.empty:
-                  p_correcta = str(match_t["Password"].values[0]).strip()
-                  p_ingresada = str(pass_tec_responsable).strip().replace(
-                      ".0", ""
-                  )
-
-                  if p_ingresada == p_correcta:
-                    st.session_state["ordenes_en_atencion"][ot_id] = (
-                        tec_elegido
-                    )
-                    datos_toma = {
-                        "Tecnico": tec_elegido,
-                        "TipoMantenimiento": row["TipoMantenimiento"],
-                        "HoraRecepcion": (
-                            row["HoraEmision"]
-                            if row["HoraEmision"] != "--:--"
-                            else datetime.now().strftime("%H:%M")
-                        ),
-                        "HoraCierre": row["HoraCierre"],
-                        "HoraConformidad": row["HoraConformidad"],
-                        "MinutosEspera": row["MinutosEspera"],
-                        "MinutosTrabajo": row["MinutosTrabajo"],
-                        "MinutosTotalOT": row["MinutosTotalOT"],
-                        "Descripcion": row["Descripcion"],
-                        "Estado": row["Estado"],
-                    }
-                    actualizar_orden_db(ot_id, datos_toma)
-                    st.success("✅ ¡Asignado correctamente! Menú desplegado.")
-                    st.rerun()
-                  else:
-                    st.error("Contraseña incorrecta.")
-                else:
-                  st.error("Técnico no encontrado.")
-        else:
-          tec_activo = (
-              atendiendo_activo
-              if atendiendo_activo and atendiendo_activo != "Pendiente de Asignar"
-              else tec_en_bd
-          )
-          st.success(f"👤 Técnico responsable actual: **{tec_activo}**")
-
-          with st.form(f"form_cierre_{ot_id}"):
-            col_t1, col_t2 = st.columns(2)
-            with col_t1:
-              clasificacion_trabajo = st.selectbox(
-                  "Clasificación de Trabajo",
-                  ["Correctivo", "Ajuste", "Configuracion de linea", "Mejora"],
-                  key=f"tipo_{ot_id}",
-              )
-            with col_t2:
-              accion_orden = st.selectbox(
-                  "Acción sobre la Orden",
-                  [
-                      "Finalizar y Cerrar Orden",
-                      "Poner en Espera (Falta Refacción)",
-                      "Poner en Espera (Servicio Externo)",
-                      "Cancelar / Liberar Atención",
-                  ],
-                  key=f"accion_{ot_id}",
-              )
-
-            desc_tec = st.text_area(
-                "Diagnóstico o Notas de Avance",
-                value=row["Descripcion"],
-                key=f"desc_{ot_id}",
-            )
-
-            st.markdown("---")
-            pass_cierre_input = st.text_input(
-                f"🔒 Ingresa tu contraseña personal ({tec_activo}) para confirmar"
-                " la acción y liberarte:",
-                type="password",
-                key=f"pass_cierre_{ot_id}",
-            )
-
-            btn_ejecutar = st.form_submit_button(
-                "Ejecutar Acción y Liberar Técnico", use_container_width=True
-            )
-
-            if btn_ejecutar:
-              if not pass_cierre_input:
-                st.error(
-                    "Debes ingresar tu contraseña personal para confirmar la"
-                    " acción."
-                )
-              else:
-                match_t = df_tec_system[
-                    df_tec_system["Tecnico"] == tec_activo.strip()
-                ]
-                if not match_t.empty:
-                  p_correcta = str(match_t["Password"].values[0]).strip()
-                  p_ingresada = str(pass_cierre_input).strip().replace(
-                      ".0", ""
-                  )
-
-                  if p_ingresada == p_correcta:
-                    if accion_orden == "Cancelar / Liberar Atención":
-                      if ot_id in st.session_state["ordenes_en_atencion"]:
-                        del st.session_state["ordenes_en_atencion"][ot_id]
-                      datos_liberar = {
-                          "Tecnico": "Pendiente de Asignar",
-                          "TipoMantenimiento": row["TipoMantenimiento"],
-                          "HoraRecepcion": row["HoraRecepcion"],
-                          "HoraCierre": row["HoraCierre"],
-                          "HoraConformidad": row["HoraConformidad"],
-                          "MinutosEspera": row["MinutosEspera"],
-                          "MinutosTrabajo": row["MinutosTrabajo"],
-                          "MinutosTotalOT": row["MinutosTotalOT"],
-                          "Descripcion": row["Descripcion"],
-                          "Estado": "Abierta",
-                      }
-                      actualizar_orden_db(ot_id, datos_liberar)
-                      st.session_state["mensaje_alerta"] = (
-                          "ℹ️ Atención cancelada. Orden devuelta a pendientes."
-                      )
-                      st.rerun()
-
-                    elif "Poner en Espera" in accion_orden:
-                      motivo_espera = (
-                          "EN ESPERA [Falta Refacción]: "
-                          if "Refacción" in accion_orden
-                          else "EN ESPERA [Servicio Externo]: "
-                      )
-                      nota_final_espera = motivo_espera + desc_tec
-
-                      datos_espera = {
-                          "Tecnico": "Pendiente de Asignar",
-                          "TipoMantenimiento": clasificacion_trabajo,
-                          "HoraRecepcion": (
-                              row["HoraEmision"]
-                              if row["HoraEmision"] != "--:--"
-                              else datetime.now().strftime("%H:%M")
-                          ),
-                          "HoraCierre": "--:--",
-                          "HoraConformidad": "--:--",
-                          "MinutosEspera": 0,
-                          "MinutosTrabajo": 0,
-                          "MinutosTotalOT": 0,
-                          "Descripcion": nota_final_espera,
-                          "Estado": "En Espera",
-                      }
-                      actualizar_orden_db(ot_id, datos_espera)
-                      if ot_id in st.session_state["ordenes_en_atencion"]:
-                        del st.session_state["ordenes_en_atencion"][ot_id]
-
-                      st.session_state["mensaje_alerta"] = (
-                          f"⚠️ Orden {row['NumOrden']} marcada como En"
-                          f" Espera. Técnico liberado correctamente."
-                      )
-                      st.rerun()
-
-                    elif accion_orden == "Finalizar y Cerrar Orden":
-                      try:
-                        hora_actual_str = datetime.now().strftime("%H:%M")
-                        h_rec = (
-                            row["HoraEmision"]
-                            if row["HoraEmision"] != "--:--"
-                            else hora_actual_str
-                        )
-                        h_cie = hora_actual_str
-                        h_con = (
-                            row["HoraConformidad"]
-                            if row["HoraConformidad"] != "--:--"
-                            else "--:--"
-                        )
-
-                        dt_emi = datetime.strptime(row["HoraEmision"], "%H:%M")
-                        dt_rec = datetime.strptime(h_rec, "%H:%M")
-                        dt_cie = datetime.strptime(h_cie, "%H:%M")
-
-                        base_date = datetime.today()
-                        dt_e = datetime.combine(base_date, dt_emi.time())
-                        dt_r = datetime.combine(base_date, dt_rec.time())
-                        dt_c = datetime.combine(base_date, dt_cie.time())
-
-                        if dt_r < dt_e:
-                          dt_r += timedelta(days=1)
-                        if dt_c < dt_r:
-                          dt_c += timedelta(days=1)
-
-                        min_esp = max(
-                            0, int((dt_r - dt_e).total_seconds() / 60)
-                        )
-                        min_trab = max(
-                            0, int((dt_c - dt_r).total_seconds() / 60)
-                        )
-                        min_tot = max(
-                            0, int((dt_c - dt_e).total_seconds() / 60)
-                        )
-
-                        datos_actualizados = {
-                            "Tecnico": tec_activo,
-                            "TipoMantenimiento": clasificacion_trabajo,
-                            "HoraRecepcion": h_rec,
-                            "HoraCierre": h_cie,
-                            "HoraConformidad": h_con,
-                            "MinutosEspera": min_esp,
-                            "MinutosTrabajo": min_trab,
-                            "MinutosTotalOT": min_tot,
-                            "Descripcion": desc_tec,
-                            "Estado": "Cerrada",
-                        }
-
-                        actualizar_orden_db(ot_id, datos_actualizados)
-                        if ot_id in st.session_state["ordenes_en_atencion"]:
-                          del st.session_state["ordenes_en_atencion"][ot_id]
-
-                        st.session_state["mensaje_alerta"] = (
-                            f"✅ Orden {row['NumOrden']} cerrada correctamente"
-                            f" y técnico liberado."
-                        )
-                        st.rerun()
-                      except ValueError:
-                        st.error("Error al procesar las horas automáticas.")
-                  else:
-                    st.error(
-                        "Contraseña incorrecta. No se pudo validar tu"
-                        " identidad."
-                    )
-                else:
-                  st.error("Técnico no encontrado en el sistema.")
-
-# ---------------------------------------------------------
-# CATEGORÍA 3: VISUALIZADOR
-# ---------------------------------------------------------
-elif categoria_usuario == "📊 Visualizador":
-  st.subheader(
-      "📊 Panel de Visualización, Seguimiento y Conformidad [BETA]"
-  )
-
-  if st.session_state["mensaje_alerta"]:
-    st.success(st.session_state["mensaje_alerta"])
-    st.session_state["mensaje_alerta"] = None
-
-  df_all = cargar_datos_db()
-
-  if df_all.empty:
-    st.info("Aún no hay registros en la base de datos de pruebas.")
-  else:
-    df_deptos_system = cargar_departamentos_df()
-    lista_deptos_filtro = ["Todos"] + list(
-        df_deptos_system["Departamento"].unique()
+    df_pendientes = cargar_datos_db(
+        "SELECT * FROM ordenes WHERE Estado IN ('Abierta', 'En Espera')"
     )
 
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-      fechas_disp = sorted(
-          [str(f) for f in df_all["Fecha"].dropna().unique()], reverse=True
-      )
-      fecha_sel = st.selectbox("Filtrar por Fecha", fechas_disp)
-    with col2:
-      turnos_disp = ["Todos"] + list(
-          df_all["Turno"].dropna().unique().astype(str)
-      )
-      turno_sel = st.selectbox("Filtrar por Turno", turnos_disp)
-    with col3:
-      estado_sel = st.selectbox(
-          "Filtrar por Estado", ["Todos", "Abierta", "En Espera", "Cerrada"]
-      )
-    with col4:
-      depto_sel = st.selectbox("Filtrar por Departamento", lista_deptos_filtro)
-
-    df_f = df_all[df_all["Fecha"].astype(str) == str(fecha_sel)]
-    if turno_sel != "Todos":
-      df_f = df_f[df_f["Turno"].astype(str) == str(turno_sel)]
-    if estado_sel != "Todos":
-      df_f = df_f[df_f["Estado"].astype(str) == str(estado_sel)]
-    if depto_sel != "Todos":
-      df_f = df_f[df_f["Departamento"].astype(str) == str(depto_sel)]
-
-    st.markdown("---")
-
-    if df_f.empty:
-      st.warning("No hay órdenes con los filtros seleccionados.")
+    if df_pendientes.empty:
+      st.info("🎉 ¡Excelente trabajo! No hay órdenes pendientes ni en espera.")
     else:
-      m1, m2, m3, m4 = st.columns(4)
-      m1.metric(label="Total de Órdenes", value=len(df_f))
-      m2.metric(
-          label="En Espera (Pausadas)",
-          value=len(df_f[df_f["Estado"] == "En Espera"]),
-      )
-      m3.metric(
-          label="T. Trabajo Acumulado",
-          value=f"{df_f['MinutosTrabajo'].sum()} min",
-      )
-      m4.metric(
-          label="Abiertas / Pendientes",
-          value=len(df_f[df_f["Estado"] == "Abierta"]),
-      )
+      for index, row in df_pendientes.iterrows():
+        ot_id = row["id"]
+        estado_actual_ot = row["Estado"]
+        tec_en_bd = str(row["Tecnico"]).strip()
 
-      # --- NUEVOS INDICADORES: TOP DE FALLAS POR EQUIPO Y DESGLOSE POR TÉCNICO ---
-      st.markdown("---")
-      st.markdown("### 📈 Indicadores y Rendimiento")
-
-      col_ind1, col_ind2 = st.columns(2)
-
-      with col_ind1:
-        st.markdown("#### ⚙️ Top de Fallas por Equipo")
-        if "Equipo" in df_f.columns and not df_f["Equipo"].empty:
-          top_equipos = (
-              df_f["Equipo"]
-              .value_counts()
-              .reset_index()
-          )
-          top_equipos.columns = ["Equipo", "Total Fallas"]
-          st.bar_chart(top_equipos.set_index("Equipo"))
-        else:
-          st.info("No hay datos suficientes de equipos.")
-
-      with col_ind2:
-        st.markdown("#### 👷‍♂️ Desglose de Órdenes por Técnico")
-        if "Tecnico" in df_f.columns and not df_f["Tecnico"].empty:
-          # Tabla cruzada o conteo por técnico y estado
-          df_tecnicos_resumen = (
-              df_f.groupby(["Tecnico", "Estado"])
-              .size()
-              .unstack(fill_value=0)
-              .reset_index()
-          )
-          st.dataframe(df_tecnicos_resumen, use_container_width=True)
-        else:
-          st.info("No hay datos suficientes de técnicos.")
-
-      st.markdown("---")
-      st.markdown("### 📋 Detalle de Órdenes y Dar Conformidad")
-
-      for index, row in df_f.iterrows():
-        estado_con_actual = row["HoraConformidad"]
-        ya_conforme = estado_con_actual != "--:--"
-        depto_txt = (
-            str(row["Departamento"]).strip()
-            if "Departamento" in row and pd.notna(row["Departamento"])
-            else "N/D"
-        )
-        estado_ot = str(row["Estado"]).strip()
-
-        if ya_conforme:
-          icono_estado = "🟢"
-          sufijo_estado = "**[Cerrada con Visto Bueno]**"
-        elif estado_ot == "Abierta":
-          icono_estado = "🔴"
-          sufijo_estado = "**[Abierta]**"
-        elif estado_ot == "En Espera":
-          icono_estado = "🟠"
-          sufijo_estado = "**[En Espera]**"
-        else:
-          icono_estado = "🔵"
-          sufijo_estado = f"**[{estado_ot}]**"
+        es_mio = tec_en_bd == tec_actual
+        esta_libre = tec_en_bd == "Pendiente de Asignar"
 
         etiqueta_exp = (
-            f"{icono_estado} [{row['NumOrden']}] Depto: {depto_txt} | Área:"
-            f" {row['Area']} | Equipo: {row['Equipo']} | Estado:"
-            f" {sufijo_estado}"
+            f"🔔 [{row['NumOrden']}] Depto: {row.get('Departamento', 'N/D')} |"
+            f" Área: {row['Area']} | Equipo: {row['Equipo']} | Estado:"
+            f" **{estado_actual_ot}**"
         )
 
         with st.expander(etiqueta_exp):
-          st.write(f"**Técnico / Responsable:** {row['Tecnico']}")
-          st.write(f"**Clasificación de Trabajo:** {row['TipoMantenimiento']}")
-          st.write(f"**Diagnóstico / Nota:** {row['Descripcion']}")
+          st.write(f"**Descripción:** {row['Descripcion']}")
+          st.write(f"**Técnico Asignado:** {tec_en_bd}")
 
-          if row["Estado"] == "Cerrada":
-            if ya_conforme:
-              st.success(
-                  f"✅ Esta orden ya cuenta con Visto Bueno / Conformidad"
-                  f" registrada a las **{estado_con_actual}** por el"
-                  f" departamento **{depto_txt}**."
+          if esta_libre:
+            if st.button(
+                "Tomar esta Orden y Atender", key=f"tomar_{ot_id}"
+            ):
+              datos_toma = {
+                  "Tecnico": tec_actual,
+                  "TipoMantenimiento": row["TipoMantenimiento"],
+                  "HoraRecepcion": (
+                      row["HoraEmision"]
+                      if row["HoraEmision"] != "--:--"
+                      else datetime.now().strftime("%H:%M")
+                  ),
+                  "HoraCierre": row["HoraCierre"],
+                  "HoraConformidad": row["HoraConformidad"],
+                  "MinutosEspera": row["MinutosEspera"],
+                  "MinutosTrabajo": row["MinutosTrabajo"],
+                  "MinutosTotalOT": row["MinutosTotalOT"],
+                  "Descripcion": row["Descripcion"],
+                  "Estado": row["Estado"],
+              }
+              actualizar_orden_db(ot_id, datos_toma)
+              st.success("✅ ¡Orden tomada con éxito!")
+              st.rerun()
+
+          elif es_mio or estado_actual_ot == "En Espera":
+            with st.form(f"form_cierre_{ot_id}"):
+              col_t1, col_t2 = st.columns(2)
+              with col_t1:
+                clasificacion_trabajo = st.selectbox(
+                    "Clasificación de Trabajo",
+                    [
+                        "Correctivo",
+                        "Ajuste",
+                        "Configuracion de linea",
+                        "Mejora",
+                    ],
+                    key=f"tipo_{ot_id}",
+                )
+              with col_t2:
+                accion_orden = st.selectbox(
+                    "Acción sobre la Orden",
+                    [
+                        "Finalizar y Cerrar Orden",
+                        "Poner en Espera (Falta Refacción)",
+                        "Poner en Espera (Servicio Externo)",
+                        "Liberar Orden (Devolver a Pendientes)",
+                    ],
+                    key=f"accion_{ot_id}",
+                )
+
+              desc_tec = st.text_area(
+                  "Diagnóstico o Notas de Avance",
+                  value=row["Descripcion"],
+                  key=f"desc_{ot_id}",
               )
-            else:
-              with st.form(f"form_conformidad_{row['id']}"):
-                st.markdown(
-                    "🔒 **Validación de Conformidad por Departamento**"
-                )
-                pass_depto_conf = st.text_input(
-                    f"Contraseña del departamento que lanzó la orden"
-                    f" ({depto_txt}):",
-                    type="password",
-                    key=f"pass_conf_depto_{row['id']}",
-                )
-                btn_guardar_conf = st.form_submit_button(
-                    "Dar Visto Bueno (Conformidad)"
-                )
 
-                if btn_guardar_conf:
-                  if not pass_depto_conf:
-                    st.error("Debes ingresar la contraseña del departamento.")
-                  else:
-                    match_dep = df_deptos_system[
-                        df_deptos_system["Departamento"] == depto_txt
-                    ]
-                    if match_dep.empty:
-                      st.error(
-                          f"El departamento '{depto_txt}' no está registrado."
-                      )
-                    else:
-                      pass_correcta_dep = str(
-                          match_dep["Password"].values[0]
-                      ).strip()
-                      pass_ingresada_dep = str(pass_depto_conf).strip().replace(
-                          ".0", ""
-                      )
+              btn_ejecutar = st.form_submit_button(
+                  "Ejecutar Acción", use_container_width=True
+              )
 
-                      if pass_ingresada_dep != pass_correcta_dep:
-                        st.error(
-                            f"Contraseña incorrecta para el departamento"
-                            f" '{depto_txt}'."
-                        )
-                      else:
-                        hora_conf_actual = datetime.now().strftime("%H:%M")
-                        actualizar_conformidad_db(row["id"], hora_conf_actual)
-                        st.session_state["mensaje_alerta"] = (
-                            f"✅ Conformidad registrada correctamente por el"
-                            f" departamento {depto_txt}."
-                        )
-                        st.rerun()
-          else:
-            st.info(
-                f"La orden se encuentra en estado: **{row['Estado']}**. La"
-                " conformidad se habilitará una vez que sea cerrada."
-            )
+              if btn_ejecutar:
+                if accion_orden == "Liberar Orden (Devolver a Pendientes)":
+                  datos_liberar = {
+                      "Tecnico": "Pendiente de Asignar",
+                      "TipoMantenimiento": row["TipoMantenimiento"],
+                      "HoraRecepcion": row["HoraRecepcion"],
+                      "HoraCierre": row["HoraCierre"],
+                      "HoraConformidad": row["HoraConformidad"],
+                      "MinutosEspera": row["MinutosEspera"],
+                      "MinutosTrabajo": row["MinutosTrabajo"],
+                      "MinutosTotalOT": row["MinutosTotalOT"],
+                      "Descripcion": row["Descripcion"],
+                      "Estado": "Abierta",
+                  }
+                  actualizar_orden_db(ot_id, datos_liberar)
+                  st.success("ℹ️ Orden devuelta a pendientes.")
+                  st.rerun()
+
+                elif "Poner en Espera" in accion_orden:
+                  motivo_espera = (
+                      "EN ESPERA [Falta Refacción]: "
+                      if "Refacción" in accion_orden
+                      else "EN ESPERA [Servicio Externo]: "
+                  )
+                  nota_final_espera = motivo_espera + desc_tec
+                  datos_espera = {
+                      "Tecnico": "Pendiente de Asignar",
+                      "TipoMantenimiento": clasificacion_trabajo,
+                      "HoraRecepcion": (
+                          row["HoraEmision"]
+                          if row["HoraEmision"] != "--:--"
+                          else datetime.now().strftime("%H:%M")
+                      ),
+                      "HoraCierre": "--:--",
+                      "HoraConformidad": "--:--",
+                      "MinutosEspera": 0,
+                      "MinutosTrabajo": 0,
+                      "MinutosTotalOT": 0,
+                      "Descripcion": nota_final_espera,
+                      "Estado": "En Espera",
+                  }
+                  actualizar_orden_db(ot_id, datos_espera)
+                  st.success("⚠️ Orden marcada como En Espera.")
+                  st.rerun()
+
+                elif accion_orden == "Finalizar y Cerrar Orden":
+                  try:
+                    hora_actual_str = datetime.now().strftime("%H:%M")
+                    h_rec = (
+                        row["HoraEmision"]
+                        if row["HoraEmision"] != "--:--"
+                        else hora_actual_str
+                    )
+                    h_cie = hora_actual_str
+                    h_con = (
+                        row["HoraConformidad"]
+                        if row["HoraConformidad"] != "--:--"
+                        else "--:--"
+                    )
+
+                    dt_emi = datetime.strptime(row["HoraEmision"], "%H:%M")
+                    dt_rec = datetime.strptime(h_rec, "%H:%M")
+                    dt_cie = datetime.strptime(h_cie, "%H:%M")
+
+                    base_date = datetime.today()
+                    dt_e = datetime.combine(base_date, dt_emi.time())
+                    dt_r = datetime.combine(base_date, dt_rec.time())
+                    dt_c = datetime.combine(base_date, dt_cie.time())
+
+                    if dt_r < dt_e:
+                      dt_r += timedelta(days=1)
+                    if dt_c < dt_r:
+                      dt_c += timedelta(days=1)
+
+                    min_esp = max(0, int((dt_r - dt_e).total_seconds() / 60))
+                    min_trab = max(0, int((dt_c - dt_r).total_seconds() / 60))
+                    min_tot = max(0, int((dt_c - dt_e).total_seconds() / 60))
+
+                    datos_actualizados = {
+                        "Tecnico": tec_actual,
+                        "TipoMantenimiento": clasificacion_trabajo,
+                        "HoraRecepcion": h_rec,
+                        "HoraCierre": h_cie,
+                        "HoraConformidad": h_con,
+                        "MinutosEspera": min_esp,
+                        "MinutosTrabajo": min_trab,
+                        "MinutosTotalOT": min_tot,
+                        "Descripcion": desc_tec,
+                        "Estado": "Cerrada",
+                    }
+                    actualizar_orden_db(ot_id, datos_actualizados)
+                    st.success(f"✅ Orden {row['NumOrden']} cerrada con éxito.")
+                    st.rerun()
+                  except ValueError:
+                    st.error("Error al procesar las horas automáticas.")
+
+  # ---------------------------------------------------------
+  # CATEGORÍA 3: VISUALIZADOR (CON EXPORTACIÓN A EXCEL/CSV)
+  # ---------------------------------------------------------
+  elif rol == "Visualizador":
+    st.subheader(
+        "📊 Panel de Visualización, Seguimiento e Indicadores [BETA]"
+    )
+
+    df_all = cargar_datos_db()
+
+    if df_all.empty:
+      st.info("Aún no hay registros en la base de datos.")
+    else:
+      df_deptos_system = cargar_departamentos_df()
+      lista_deptos_filtro = ["Todos"] + list(
+          df_deptos_system["Departamento"].unique()
+      )
+
+      col1, col2, col3, col4 = st.columns(4)
+      with col1:
+        fechas_disp = sorted(
+            [str(f) for f in df_all["Fecha"].dropna().unique()], reverse=True
+        )
+        fecha_sel = st.selectbox("Filtrar por Fecha", fechas_disp)
+      with col2:
+        turnos_disp = ["Todos"] + list(
+            df_all["Turno"].dropna().unique().astype(str)
+        )
+        turno_sel = st.selectbox("Filtrar por Turno", turnos_disp)
+      with col3:
+        estado_sel = st.selectbox(
+            "Filtrar por Estado", ["Todos", "Abierta", "En Espera", "Cerrada"]
+        )
+      with col4:
+        depto_sel = st.selectbox(
+            "Filtrar por Departamento", lista_deptos_filtro
+        )
+
+      df_f = df_all[df_all["Fecha"].astype(str) == str(fecha_sel)]
+      if turno_sel != "Todos":
+        df_f = df_f[df_f["Turno"].astype(str) == str(turno_sel)]
+      if estado_sel != "Todos":
+        df_f = df_f[df_f["Estado"].astype(str) == str(estado_sel)]
+      if depto_sel != "Todos":
+        df_f = df_f[df_f["Departamento"].astype(str) == str(depto_sel)]
 
       st.markdown("---")
-      st.markdown("### 📊 Tabla General de Registros")
-      st.dataframe(df_f, use_container_width=True)
 
-# ---------------------------------------------------------
-# CATEGORÍA 4: ADMINISTRADOR (GESTIÓN TOTAL)
-# ---------------------------------------------------------
-elif categoria_usuario == "🛠️ Administrador (Gestión Total)":
-  st.subheader("🛠️ Panel de Administración del Sistema")
-  st.markdown(
-      "Gestiona los técnicos autorizados, los departamentos solicitantes, las"
-      " áreas y la base de datos."
-  )
+      if df_f.empty:
+        st.warning("No hay órdenes con los filtros seleccionados.")
+      else:
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric(label="Total de Órdenes", value=len(df_f))
+        m2.metric(
+            label="En Espera (Pausadas)",
+            value=len(df_f[df_f["Estado"] == "En Espera"]),
+        )
+        m3.metric(
+            label="T. Trabajo Acumulado",
+            value=f"{df_f['MinutosTrabajo'].sum()} min",
+        )
+        m4.metric(
+            label="Abiertas / Pendientes",
+            value=len(df_f[df_f["Estado"] == "Abierta"]),
+        )
 
-  pass_gerencia = st.text_input(
-      "Contraseña de Administrador", type="password", key="pass_admin_total"
-  )
+        st.markdown("---")
+        st.markdown("### 📈 Indicadores y Rendimiento")
+        col_ind1, col_ind2 = st.columns(2)
 
-  if pass_gerencia.strip() == "avangardmtto22":
-    st.success("Acceso concedido.")
+        with col_ind1:
+          st.markdown("#### ⚙️ Top de Fallas por Equipo")
+          if "Equipo" in df_f.columns and not df_f["Equipo"].empty:
+            top_equipos = df_f["Equipo"].value_counts().reset_index()
+            top_equipos.columns = ["Equipo", "Total Fallas"]
+            st.bar_chart(top_equipos.set_index("Equipo"))
+
+        with col_ind2:
+          st.markdown("#### 👷‍♂️ Desglose de Órdenes por Técnico")
+          if "Tecnico" in df_f.columns and not df_f["Tecnico"].empty:
+            df_tecnicos_resumen = (
+                df_f.groupby(["Tecnico", "Estado"])
+                .size()
+                .unstack(fill_value=0)
+                .reset_index()
+            )
+            st.dataframe(df_tecnicos_resumen, use_container_width=True)
+
+        st.markdown("---")
+        st.markdown("### 📥 Exportar Reportes")
+
+        # Conversión del DataFrame filtrado a CSV para descarga directa
+        csv_data = df_f.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            label="📊 Descargar Reporte Filtrado en CSV (Excel)",
+            data=csv_data,
+            file_name=f"reporte_mantenimiento_{fecha_sel}.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+
+        st.markdown("---")
+        st.markdown("### 📋 Detalle de Órdenes")
+        st.dataframe(df_f, use_container_width=True)
+
+  # ---------------------------------------------------------
+  # CATEGORÍA 4: ADMINISTRADOR (GESTIÓN TOTAL)
+  # ---------------------------------------------------------
+  elif rol == "Admin":
+    st.subheader("🛠️ Panel de Administración del Sistema")
+    st.markdown(
+        "Gestiona los técnicos autorizados, los departamentos solicitantes y"
+        " las áreas de planta."
+    )
+
     tab_g1, tab_g2, tab_g3 = st.tabs(
         [
             "👥 Gestión de Técnicos",
@@ -1065,6 +886,3 @@ elif categoria_usuario == "🛠️ Administrador (Gestión Total)":
             st.error(msg)
         else:
           st.warning("Selecciona un área válida.")
-
-  elif pass_gerencia:
-    st.error("Contraseña incorrecta.")
